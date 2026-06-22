@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  DEPLOY_BASE: https://sourovdeb.com
+  DEPLOY_BASE: https://www.sourovdeb.com
   DEPLOY_KEY: 0767044896thevenet_
 
 jobs:
@@ -24,6 +24,28 @@ jobs:
             --data-urlencode "content=$CONTENT" \
             | tee plugin-upload.json
 
+      - name: Upload crawl-page.php
+        run: |
+          set -euo pipefail
+          CONTENT=$(base64 -w 0 crawl-page.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=wp-content/plugins/crawl-page.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee crawl-upload.json
+
+      - name: Upload sourov-ai-chatbot plugin
+        run: |
+          set -euo pipefail
+          CONTENT=$(base64 -w 0 sourov-ai-chatbot/sourov-ai-chatbot.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=wp-content/plugins/sourov-ai-chatbot/sourov-ai-chatbot.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee chatbot-upload.json
+
       - name: Verify plugin upload size
         run: |
           set -euo pipefail
@@ -32,6 +54,23 @@ jobs:
           SIZE=$(python3 -c "import json; d=json.load(open('plugin-list.json')); print(d['items'][0]['size'])")
           echo "Uploaded plugin size: $SIZE bytes"
           test "$SIZE" -gt 25000
+
+      - name: Verify crawl-page and chatbot uploads
+        run: |
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/" \
+            | tee plugins-list.json
+          python3 - <<'PY'
+import json
+with open('plugins-list.json') as f:
+    data = json.load(f)
+names = {i['name'] for i in data['items']}
+assert 'crawl-page.php' in names, 'crawl-page.php missing'
+print('crawl-page.php present')
+PY
+          curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/sourov-ai-chatbot/" \
+            | tee chatbot-list.json
+          python3 -c "import json; d=json.load(open('chatbot-list.json')); assert d['items'], 'chatbot dir empty'; print('chatbot size:', d['items'][0]['size'])"
 
       - name: Upload plugin-manager-runner.php (force_sync)
         run: |
@@ -60,7 +99,11 @@ jobs:
           name: deploy-results
           path: |
             plugin-upload.json
+            crawl-upload.json
+            chatbot-upload.json
             plugin-list.json
+            plugins-list.json
+            chatbot-list.json
             runner-upload.json
             runner-output.json
             final-plugins.json
