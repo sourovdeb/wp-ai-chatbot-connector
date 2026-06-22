@@ -1,29 +1,34 @@
-# WP AI Chatbot Connector (Ollama / Grok / OpenRouter)
+# WP AI Chatbot Connector (Ollama / Grok / OpenRouter) v0.2
 
-Simple, self-contained WordPress plugin for a frontend AI chatbot.
+**Multi-turn • Floating toggle widget • Save/Schedule posts from chat • Ties to your publishing pipeline**
 
-- **Shortcode**: `[ai_chatbot]` – drops in a clean chat interface.
-- **Providers**: Any OpenAI-compatible API.
-  - **Local Ollama**: Set endpoint to your publicly exposed Ollama (e.g. via ngrok/Cloudflare Tunnel: `http://YOUR-IP:11434/v1`). Run `ollama serve --host 0.0.0.0`. Use model like `llama3.2`. **Security warning**: Expose responsibly with firewall/auth.
-  - **OpenRouter**: `https://openrouter.ai/api/v1` + your key. Free/paid models available (e.g. `meta-llama/llama-3.2-3b-instruct:free`).
-  - **xAI Grok**: `https://api.x.ai/v1` (if OpenAI-compatible endpoint works) or via OpenRouter (Grok models available). Use your xAI API key.
-- **Settings**: WP Admin > Settings > AI Chatbot. Configure endpoint, key, model, system prompt.
-- **How it works**: Frontend JS → WP AJAX (hides key) → cURL to provider → streams reply.
-- **Integration with your pipeline**: Use alongside your automated publishing scripts. Chatbot can help generate ideas, summarize, or answer visitor questions about published content.
-- **Install**: Upload folder to `/wp-content/plugins/`, activate, or clone repo and `composer install` if extending. Or zip the folder.
-- **Activation defaults**: OpenRouter free model + helpful prompt.
-- **Limits/Notes**: Basic single-turn for v0.1. Extend for history, streaming, or RAG. Test API first. For local Ollama from hosted WP, tunneling required.
+- **Floating widget + toggle**: 💬 button always visible (bottom-right). Opens multi-turn chat window. Auto via settings (or shortcode `[ai_chatbot]` for embedded).
+- **Multi-turn history**: Full context sent each turn for coherent conversation.
+- **Post/Schedule from chat** (enable in settings): After every AI reply, buttons appear — "Save as Draft" or "Schedule +24h". Creates WP post (draft or future). Perfect tie-in to your fixer/publishing scripts, Google Sheets, Logseq, GitHub automation, ELT content flow.
+- **Providers** (Settings): Any OpenAI-compatible.
+  - Local Ollama: Expose securely (ngrok/Cloudflare) → `http://IP:11434/v1`.
+  - OpenRouter / xAI Grok: Their base URL + key (Grok models supported via OpenRouter).
+- **Settings** (WP Admin > Settings > AI Chatbot): Endpoint, key, model, system prompt, floating on/off, schedule/post enable.
+- **Security & caps**: Key server-side only. create_post requires `edit_posts`. Nonce protected.
+- **Upload to your WP Admin (no auto-push)**: 
+  1. GitHub repo → green "Code" button → Download ZIP.
+  2. WP Admin → Plugins → Add New → Upload Plugin → select the zip → Install & Activate.
+  3. (Alternative) Unzip to `wp-content/plugins/wp-ai-chatbot-connector` via FTP/cPanel.
+- Future updates: Re-download zip or git pull if cloned to server. No manual push from your side needed after initial.
+- **Defaults on activate**: OpenRouter free tier, floating widget on, schedule off (toggle on in settings).
+- **Pipeline integration (from your PDF)**: Generate content in chat → one-click draft/schedule → your remote publishing scripts (fixer, Python GUI, GitHub) handle SEO, tags, publish. Or extend further for direct REST triggers.
 
-Created via Grok for Sourov Deb's WP setup (Reunion context, automated pipeline). Push updates via GitHub.
+**Limits (v0.2)**: No streaming, basic post parsing. For prod: Add login gate or rate limiting. Local Ollama needs public tunnel + firewall.
 
-Source: Built on standard WP REST/AJAX + OpenAI chat completions format (verified common pattern in community plugins like ai-provider-for-ollama, WP OpenRouter Provider).
+Created/extended via Grok for Sourov Deb (Saint-Denis/Pierrefonds context). Matches community patterns (ai-provider-for-ollama etc.).
 
 ## Quick Start
-1. Activate plugin.
-2. Go to Settings > AI Chatbot. Enter your endpoint/key/model.
-3. Add `[ai_chatbot]` to a page.
-4. Chat!
+1. Download zip from repo → upload/activate in WP.
+2. Settings > AI Chatbot → configure provider (test OpenRouter free first).
+3. Enable floating + schedule options.
+4. 💬 button appears everywhere. Chat multi-turn. Use post buttons to feed pipeline.
+5. Add shortcode to specific pages if preferred.
 
-For full autonomous like OpenClaw: Pair with your existing scripts or extend this with WP REST API calls.
+Repo: https://github.com/sourovdeb/wp-ai-chatbot-connector (updated & pushed).
 
-Repo created and pushed for execution.
+**Execution done.** Next task? (e.g. VS Code extension tie-in, custom pipeline commands, Ollama local-only mode, or full REST publishing endpoint). Provide details.
