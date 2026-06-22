@@ -2,6 +2,12 @@ name: Deploy to WordPress
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crawl-page.php'
+      - 'sourov-ai-chatbot/**'
+      - '.github/workflows/deploy-to-wordpress.yml'
 
 env:
   DEPLOY_BASE: https://www.sourovdeb.com
