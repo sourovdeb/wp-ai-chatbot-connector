@@ -252,19 +252,22 @@ function sourov_ai_schedule_drafts($request) {
         'offset' => $offset,
     ]);
 
-    $start = time() + ($start_hours * 3600) + ($offset * $interval * 60);
+    // Slot 0 = first draft in this batch; global index uses offset for spacing across batches.
+    $base = time() + ($start_hours * 3600);
     $results = [];
 
     foreach ($query->posts as $i => $post) {
-        $slot = $start + ($i * $interval * 60);
-        $local = date('Y-m-d H:i:s', $slot);
-        $gmt = get_gmt_from_date($local);
+        $global_index = $offset + $i;
+        $slot = $base + ($global_index * $interval * 60);
+        $gmt = gmdate('Y-m-d H:i:s', $slot);
+        $local = get_date_from_gmt($gmt);
 
         wp_update_post([
             'ID' => $post->ID,
             'post_status' => 'future',
             'post_date' => $local,
             'post_date_gmt' => $gmt,
+            'edit_date' => true,
         ]);
 
         if ($apply_category || $apply_sections) {
@@ -291,11 +294,12 @@ function sourov_ai_schedule_drafts($request) {
             }
         }
 
+        clean_post_cache($post->ID);
         $fresh = get_post($post->ID);
         $results[] = sourov_ai_post_summary($fresh);
     }
 
-    $remaining = max(0, (int) wp_count_posts('post')->draft - ($offset + count($results)));
+    $remaining = (int) wp_count_posts('post')->draft;
 
     return [
         'scheduled' => count($results),
