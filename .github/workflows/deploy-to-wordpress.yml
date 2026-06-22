@@ -3,6 +3,10 @@ name: Deploy to WordPress
 on:
   workflow_dispatch:
 
+env:
+  DEPLOY_BASE: https://sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -11,9 +15,9 @@ jobs:
 
       - name: Upload plugin via deploy.php
         run: |
-          set -e
+          set -euo pipefail
           CONTENT=$(base64 -w 0 ai-chatbot-connector.php)
-          curl -sS -X POST "https://www.sourovdeb.com/deploy.php?key=0767044896thevenet_" \
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
             --data-urlencode "action=upload" \
             --data-urlencode "path=wp-content/plugins/wp-ai-chatbot-connector/ai-chatbot-connector.php" \
             --data-urlencode "encoded=true" \
@@ -22,8 +26,8 @@ jobs:
 
       - name: Verify plugin upload size
         run: |
-          set -e
-          curl -sS "https://www.sourovdeb.com/deploy.php?action=list&key=0767044896thevenet_&path=wp-content/plugins/wp-ai-chatbot-connector/" \
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/wp-ai-chatbot-connector/" \
             | tee plugin-list.json
           SIZE=$(python3 -c "import json; d=json.load(open('plugin-list.json')); print(d['items'][0]['size'])")
           echo "Uploaded plugin size: $SIZE bytes"
@@ -31,9 +35,9 @@ jobs:
 
       - name: Upload plugin-manager-runner.php (force_sync)
         run: |
-          set -e
+          set -euo pipefail
           CONTENT=$(base64 -w 0 plugin-manager-runner.php)
-          curl -sS -X POST "https://www.sourovdeb.com/deploy.php?key=0767044896thevenet_" \
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
             --data-urlencode "action=upload" \
             --data-urlencode "path=plugin-manager-runner.php" \
             --data-urlencode "encoded=true" \
@@ -42,11 +46,13 @@ jobs:
 
       - name: Execute runner
         run: |
-          curl -sS "https://www.sourovdeb.com/plugin-manager-runner.php?key=0767044896thevenet_" | tee runner-output.json
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/plugin-manager-runner.php?key=${DEPLOY_KEY}" | tee runner-output.json
 
       - name: Fetch final plugin list
         run: |
-          curl -sS "https://www.sourovdeb.com/wp-json/sourov-diagnostic/v1/plugins" | tee final-plugins.json
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/wp-json/sourov-diagnostic/v1/plugins" | tee final-plugins.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
