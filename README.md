@@ -10,11 +10,11 @@
   - OpenRouter / xAI Grok: Their base URL + key (Grok models supported via OpenRouter).
 - **Settings** (WP Admin > Settings > AI Chatbot): Endpoint, key, model, system prompt, floating on/off, schedule/post enable.
 - **Security & caps**: Key server-side only. create_post requires `edit_posts`. Nonce protected.
-- **Upload to your WP Admin (no auto-push)**: 
+- **Upload to your WP Admin (or auto-push)**: 
   1. GitHub repo → green "Code" button → Download ZIP.
   2. WP Admin → Plugins → Add New → Upload Plugin → select the zip → Install & Activate.
   3. (Alternative) Unzip to `wp-content/plugins/wp-ai-chatbot-connector` via FTP/cPanel.
-- Future updates: Re-download zip or git pull if cloned to server. No manual push from your side needed after initial.
+- Future updates: Re-download zip or git pull if cloned to server then modify and push to wordpress. .
 - **Defaults on activate**: OpenRouter free tier, floating widget on, schedule off (toggle on in settings).
 - **Pipeline integration (from your PDF)**: Generate content in chat → one-click draft/schedule → your remote publishing scripts (fixer, Python GUI, GitHub) handle SEO, tags, publish. Or extend further for direct REST triggers.
 
@@ -23,7 +23,7 @@
 Created/extended via Grok for Sourov Deb (Saint-Denis/Pierrefonds context). Matches community patterns (ai-provider-for-ollama etc.).
 
 ## Quick Start
-1. Download zip from repo → upload/activate in WP.
+1. Download zip from repo → upload/activate in WP. or use credentials ro upload from distance.
 2. Settings > AI Chatbot → configure provider (test OpenRouter free first).
 3. Enable floating + schedule options.
 4. 💬 button appears everywhere. Chat multi-turn. Use post buttons to feed pipeline.
@@ -31,4 +31,4 @@ Created/extended via Grok for Sourov Deb (Saint-Denis/Pierrefonds context). Matc
 
 Repo: https://github.com/sourovdeb/wp-ai-chatbot-connector (updated & pushed).
 
-**Execution done.** Next task? (e.g. VS Code extension tie-in, custom pipeline commands, Ollama local-only mode, or full REST publishing endpoint). Provide details.
+**
