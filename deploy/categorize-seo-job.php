@@ -140,9 +140,11 @@ function sourov_cat_apply_seo($post_id, $title, $content, $ai = null) {
         $changes[] = 'focuskw';
     }
 
+    // Ensure indexable (Yoast)
     update_post_meta($post_id, '_yoast_wpseo_meta-robots-noindex', '0');
     update_post_meta($post_id, '_yoast_wpseo_meta-robots-nofollow', '0');
 
+    // Legacy meta_description field used by controller
     if (!get_post_meta($post_id, '_meta_description', true) && !empty($metadesc)) {
         update_post_meta($post_id, '_meta_description', $metadesc);
         $changes[] = 'legacy_meta';
@@ -334,6 +336,7 @@ if ($action === 'tick') {
     $processed = [];
     $ai_calls = 0;
 
+    // Always offset 0 — fixed posts leave the queue immediately.
     $ids = sourov_cat_query_needs_work(0, $batch);
     foreach ($ids as $post_id) {
         if (microtime(true) >= $deadline) {
@@ -390,7 +393,7 @@ if ($action === 'tick') {
     }
     update_option(SOUROV_CAT_LOG, $log, false);
 
-    if ($remaining > 0 && $n > 0) {
+    if ($remaining > 0) {
         update_option(SOUROV_CAT_JOB, $job, false);
         sourov_cat_trigger_next($job);
         echo json_encode([
@@ -400,6 +403,7 @@ if ($action === 'tick') {
             'total_processed' => $job['processed'],
             'remaining' => $remaining,
             'sample' => array_slice($processed, 0, 3),
+            'note' => $n === 0 ? 'empty batch — will retry' : null,
         ], JSON_PRETTY_PRINT);
         exit;
     }
@@ -414,15 +418,13 @@ if ($action === 'tick') {
         $audit_sample[] = ['id' => $p->ID, 'issues' => sourov_cat_audit_post($p->ID)];
     }
 
-    @unlink(__FILE__);
-
     echo json_encode([
         'ok' => true,
         'status' => 'completed',
         'total_processed' => $job['processed'],
-        'remaining' => $remaining,
+        'remaining' => 0,
         'audit_sample' => $audit_sample,
-        'message' => 'Categorize+SEO job finished. Script self-deleted.',
+        'message' => 'Categorize+SEO job finished. Re-run scan to verify; delete categorize-seo-job.php when done.',
     ], JSON_PRETTY_PRINT);
     exit;
 }
