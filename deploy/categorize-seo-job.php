@@ -215,7 +215,7 @@ function sourov_cat_query_needs_work($offset, $limit, $statuses = ['future', 'pu
     return array_map('intval', $ids);
 }
 
-function sourov_cat_count_needs_work($statuses = ['future', 'publish', 'draft']) {
+function sourov_cat_count_uncategorized($statuses = ['future', 'publish', 'draft']) {
     global $wpdb;
     $status_in = "'" . implode("','", array_map('esc_sql', $statuses)) . "'";
     return (int) $wpdb->get_var(
@@ -228,6 +228,41 @@ function sourov_cat_count_needs_work($statuses = ['future', 'publish', 'draft'])
             HAVING COUNT(tt.term_id) = 0
         ) t"
     );
+}
+
+function sourov_cat_query_seo_needs_work($offset, $limit, $statuses = ['future', 'publish', 'draft']) {
+    global $wpdb;
+    $status_in = "'" . implode("','", array_map('esc_sql', $statuses)) . "'";
+    $ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT p.ID FROM {$wpdb->posts} p
+         LEFT JOIN {$wpdb->postmeta} mdesc ON p.ID = mdesc.post_id AND mdesc.meta_key = '_yoast_wpseo_metadesc'
+         LEFT JOIN {$wpdb->postmeta} mtitle ON p.ID = mtitle.post_id AND mtitle.meta_key = '_yoast_wpseo_title'
+         LEFT JOIN {$wpdb->postmeta} mno ON p.ID = mno.post_id AND mno.meta_key = '_yoast_wpseo_meta-robots-noindex'
+         WHERE p.post_type = 'post' AND p.post_status IN ($status_in)
+           AND (mdesc.meta_id IS NULL OR mdesc.meta_value = '' OR mtitle.meta_id IS NULL OR mtitle.meta_value = '' OR mno.meta_value = '1')
+         ORDER BY p.ID ASC
+         LIMIT %d OFFSET %d",
+        $limit,
+        $offset
+    ));
+    return array_map('intval', $ids);
+}
+
+function sourov_cat_count_seo_needs_work($statuses = ['future', 'publish', 'draft']) {
+    global $wpdb;
+    $status_in = "'" . implode("','", array_map('esc_sql', $statuses)) . "'";
+    return (int) $wpdb->get_var(
+        "SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p
+         LEFT JOIN {$wpdb->postmeta} mdesc ON p.ID = mdesc.post_id AND mdesc.meta_key = '_yoast_wpseo_metadesc'
+         LEFT JOIN {$wpdb->postmeta} mtitle ON p.ID = mtitle.post_id AND mtitle.meta_key = '_yoast_wpseo_title'
+         LEFT JOIN {$wpdb->postmeta} mno ON p.ID = mno.post_id AND mno.meta_key = '_yoast_wpseo_meta-robots-noindex'
+         WHERE p.post_type = 'post' AND p.post_status IN ($status_in)
+           AND (mdesc.meta_id IS NULL OR mdesc.meta_value = '' OR mtitle.meta_id IS NULL OR mtitle.meta_value = '' OR mno.meta_value = '1')"
+    );
+}
+
+function sourov_cat_count_needs_work($statuses = ['future', 'publish', 'draft']) {
+    return sourov_cat_count_uncategorized($statuses) + sourov_cat_count_seo_needs_work($statuses);
 }
 
 function sourov_cat_trigger_next($job) {
@@ -243,21 +278,29 @@ $action = $_GET['action'] ?? 'scan';
 $job = get_option(SOUROV_CAT_JOB, null);
 
 if ($action === 'scan') {
-    $total = sourov_cat_count_needs_work();
-    $sample_ids = sourov_cat_query_needs_work(0, 5);
+    $uncat = sourov_cat_count_uncategorized();
+    $seo_gap = sourov_cat_count_seo_needs_work();
+    $sample_ids = array_slice(array_unique(array_merge(
+        sourov_cat_query_needs_work(0, 3),
+        sourov_cat_query_seo_needs_work(0, 3)
+    )), 0, 5);
     $samples = [];
     foreach ($sample_ids as $pid) {
         $p = get_post($pid);
+        if (!$p) continue;
         $samples[] = [
             'id' => $pid,
             'title' => $p->post_title,
             'status' => $p->post_status,
+            'categories' => wp_get_post_categories($pid, ['fields' => 'names']),
             'issues' => sourov_cat_audit_post($pid),
         ];
     }
     echo json_encode([
         'ok' => true,
-        'uncategorized_or_no_category' => $total,
+        'uncategorized_or_no_category' => $uncat,
+        'seo_needs_work' => $seo_gap,
+        'total_needs_work' => $uncat + $seo_gap,
         'categories_available' => SOUROV_CATEGORIES,
         'openrouter_key_set' => (bool) sourov_cat_get_openrouter_key(),
         'samples' => $samples,
@@ -336,8 +379,13 @@ if ($action === 'tick') {
     $processed = [];
     $ai_calls = 0;
 
-    // Always offset 0 — fixed posts leave the queue immediately.
+    // Phase 1: uncategorized, then phase 2: SEO gaps. Always offset 0.
     $ids = sourov_cat_query_needs_work(0, $batch);
+    $phase = 'categorize';
+    if (empty($ids)) {
+        $ids = sourov_cat_query_seo_needs_work(0, $batch);
+        $phase = 'seo';
+    }
     foreach ($ids as $post_id) {
         if (microtime(true) >= $deadline) {
             break;
@@ -348,19 +396,21 @@ if ($action === 'tick') {
         }
 
         $ai = null;
-        $cat_ids = sourov_cat_infer_regex($post->post_title, $post->post_content);
-        if (empty($cat_ids) && $api_key && $ai_calls < 8) {
-            $ai = sourov_cat_ai_classify($post->post_title, $post->post_content, $api_key);
-            $ai_calls++;
-            if ($ai && !empty($ai['category_id'])) {
-                $cat_ids = [(int) $ai['category_id']];
+        $cat_ids = [];
+        if ($phase === 'categorize' || !sourov_cat_has_real_category($post_id)) {
+            $cat_ids = sourov_cat_infer_regex($post->post_title, $post->post_content);
+            if (empty($cat_ids) && $api_key && $ai_calls < 8) {
+                $ai = sourov_cat_ai_classify($post->post_title, $post->post_content, $api_key);
+                $ai_calls++;
+                if ($ai && !empty($ai['category_id'])) {
+                    $cat_ids = [(int) $ai['category_id']];
+                }
             }
+            if (empty($cat_ids)) {
+                $cat_ids = [9];
+            }
+            wp_set_post_categories($post_id, $cat_ids, false);
         }
-        if (empty($cat_ids)) {
-            $cat_ids = [9];
-        }
-
-        wp_set_post_categories($post_id, $cat_ids, false);
         $seo_changes = sourov_cat_apply_seo($post_id, $post->post_title, $post->post_content, $ai);
         $tags = sourov_cat_apply_tags($post_id, $post->post_title, $ai);
         clean_post_cache($post_id);
@@ -368,7 +418,8 @@ if ($action === 'tick') {
         $processed[] = [
             'id' => $post_id,
             'title' => mb_substr($post->post_title, 0, 60),
-            'category' => SOUROV_CATEGORIES[$cat_ids[0]] ?? $cat_ids[0],
+            'phase' => $phase,
+            'category' => $cat_ids ? (SOUROV_CATEGORIES[$cat_ids[0]] ?? $cat_ids[0]) : 'unchanged',
             'seo' => $seo_changes,
             'tags' => $tags,
             'ai' => (bool) $ai,

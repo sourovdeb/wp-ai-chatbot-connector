@@ -46,7 +46,8 @@ def main():
     scan = get_json(f"{SITE_BASE}/categorize-seo-job.php?key={q}&action=scan")
     result = {"upload": upload, "scan": scan}
 
-    if scan.get("uncategorized_or_no_category", 0) > 0:
+    needs = scan.get("total_needs_work") or scan.get("uncategorized_or_no_category", 0)
+    if needs > 0:
         start = get_json(
             f"{SITE_BASE}/categorize-seo-job.php?key={q}&action=start&batch=40&use_ai=1"
         )
