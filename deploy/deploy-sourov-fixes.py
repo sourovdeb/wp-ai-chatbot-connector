@@ -183,7 +183,7 @@ def main():
 
     runner_path = SCRIPT_DIR / '_tmp_runner.php'
     runner_path.write_text(set_automation_options_runner(), encoding='utf-8')
-    results['options_runner'] = upload_file('public_html/sourov-fix-automation-options.php', runner_path)
+    results['options_runner'] = upload_file('sourov-fix-automation-options.php', runner_path)
 
     run_url = f"{BASE}/sourov-fix-automation-options.php"
     with urllib.request.urlopen(run_url, context=CTX, timeout=60) as resp:
