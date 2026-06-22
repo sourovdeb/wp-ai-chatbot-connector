@@ -66,17 +66,10 @@ jobs:
           set -euo pipefail
           curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/" \
             | tee plugins-list.json
-          python3 - <<'PY'
-import json
-with open('plugins-list.json') as f:
-    data = json.load(f)
-names = {i['name'] for i in data['items']}
-assert 'crawl-page.php' in names, 'crawl-page.php missing'
-print('crawl-page.php present')
-PY
+          python3 -c "import json; d=json.load(open('plugins-list.json')); names={i['name'] for i in d['items']}; assert 'crawl-page.php' in names; print('crawl-page.php present')"
           curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/sourov-ai-chatbot/" \
             | tee chatbot-list.json
-          python3 -c "import json; d=json.load(open('chatbot-list.json')); assert d['items'], 'chatbot dir empty'; print('chatbot size:', d['items'][0]['size'])"
+          python3 -c "import json; d=json.load(open('chatbot-list.json')); assert d['items']; print('chatbot size:', d['items'][0]['size'])"
 
       - name: Upload plugin-manager-runner.php (force_sync)
         run: |
