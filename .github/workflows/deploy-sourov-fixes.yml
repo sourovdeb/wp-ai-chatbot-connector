@@ -1,0 +1,25 @@
+name: Deploy Sourov Fixes
+
+on:
+  workflow_dispatch:
+
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run deploy-sourov-fixes.py
+        run: |
+          set -euo pipefail
+          python3 deploy/deploy-sourov-fixes.py | tee deploy-results.json
+
+      - name: Upload deploy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-sourov-results
+          path: deploy-results.json
