@@ -7,6 +7,7 @@ on:
     paths:
       - 'crawl-page.php'
       - 'sourov-ai-chatbot/**'
+      - 'activate-sourov-chatbot.php'
       - '.github/workflows/deploy-to-wordpress.yml'
 
 env:
@@ -87,6 +88,18 @@ jobs:
           set -euo pipefail
           curl --fail -sS "${DEPLOY_BASE}/plugin-manager-runner.php?key=${DEPLOY_KEY}" | tee runner-output.json
 
+      - name: Upload and run chatbot activator
+        run: |
+          set -euo pipefail
+          CONTENT=$(base64 -w 0 activate-sourov-chatbot.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=activate-sourov-chatbot.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee activator-upload.json
+          curl --fail -sS "${DEPLOY_BASE}/activate-sourov-chatbot.php?key=${DEPLOY_KEY}" | tee activator-output.json
+
       - name: Fetch final plugin list
         run: |
           set -euo pipefail
@@ -105,4 +118,6 @@ jobs:
             chatbot-list.json
             runner-upload.json
             runner-output.json
+            activator-upload.json
+            activator-output.json
             final-plugins.json
