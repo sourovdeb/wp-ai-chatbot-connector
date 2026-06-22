@@ -1,0 +1,88 @@
+name: Deploy Schedule Fix (Python parity)
+
+on:
+  workflow_dispatch:
+
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
+jobs:
+  deploy-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run deploy-schedule-fix equivalent
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import base64
+          import json
+          import ssl
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          BASE = "https://www.sourovdeb.com"
+          KEY = "0767044896thevenet_"
+          DEPLOY = f"{BASE}/deploy.php?key={KEY}"
+          CTX = ssl.create_default_context()
+
+          def post_form(data):
+              body = urllib.parse.urlencode(data).encode("utf-8")
+              req = urllib.request.Request(DEPLOY, data=body, method="POST")
+              req.add_header("Content-Type", "application/x-www-form-urlencoded")
+              with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          def get_json(url, headers=None):
+              req = urllib.request.Request(url, headers=headers or {})
+              with urllib.request.urlopen(req, context=CTX, timeout=120) as resp:
+                  return resp.status, json.loads(resp.read().decode("utf-8"))
+
+          def post_json(url, payload, headers):
+              body = json.dumps(payload).encode("utf-8")
+              req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+              with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
+                  return resp.status, json.loads(resp.read().decode("utf-8"))
+
+          out = {}
+          controller = Path("deploy/sourov-ai-controller-v1.2.php")
+          content = base64.b64encode(controller.read_bytes()).decode("ascii")
+          out["upload"] = post_form({
+              "action": "upload",
+              "path": "wp-content/plugins/sourov-ai-controller.php",
+              "encoded": "true",
+              "content": content,
+          })
+
+          _, out["status_before"] = get_json(f"{BASE}/wp-json/sourov/v1/status")
+
+          headers = {
+              "X-Sourov-Key": KEY,
+              "Content-Type": "application/json",
+          }
+          code, out["test_schedule"] = post_json(
+              f"{BASE}/wp-json/sourov/v1/schedule-drafts",
+              {
+                  "interval": 60,
+                  "offset": 0,
+                  "limit": 3,
+                  "start_hours": 2,
+                  "apply_category": True,
+                  "apply_sections": True,
+                  "apply_tags": True,
+              },
+              headers,
+          )
+          out["test_schedule_http"] = code
+
+          _, out["status_after"] = get_json(f"{BASE}/wp-json/sourov/v1/status")
+          _, out["scheduled_list"] = get_json(
+              f"{BASE}/wp-json/sourov/v1/scheduled",
+              headers,
+          )
+
+          print(json.dumps(out, indent=2))
+          PY
