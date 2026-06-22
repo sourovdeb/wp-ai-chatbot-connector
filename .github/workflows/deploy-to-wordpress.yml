@@ -1,0 +1,106 @@
+name: Deploy to WordPress
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Hostinger API
+        id: hostinger
+        run: |
+          set -e
+          curl -sS -H "Authorization: Bearer E1kh7XlnTYv2DNENiPWngKaARiTqkUbZfMEfK1pR2bd44db5" \
+            "https://developers.hostinger.com/api/billing/v1/subscriptions" \
+            | tee hostinger-api.json
+
+      - name: Upload plugin via deploy.php
+        run: |
+          set -e
+          CONTENT=$(base64 -w 0 ai-chatbot-connector.php)
+          curl -sS -X POST "https://www.sourovdeb.com/deploy.php?key=0767044896thevenet_" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=wp-content/plugins/wp-ai-chatbot-connector/ai-chatbot-connector.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee plugin-upload.json
+
+      - name: Upload plugin-manager-runner.php
+        run: |
+          set -e
+          cat > plugin-manager-runner.php <<'RUNNER'
+          <?php
+          header('Content-Type: application/json');
+          $SECRET = '0767044896thevenet_';
+          if (($_GET['key'] ?? '') !== $SECRET) { http_response_code(403); exit(json_encode(['error'=>'forbidden'])); }
+          $wp_load = '/home/u839078121/domains/sourovdeb.com/public_html/wp-load.php';
+          if (!file_exists($wp_load)) { http_response_code(500); exit(json_encode(['error'=>'wp-load.php not found'])); }
+          require_once $wp_load;
+          if (!function_exists('get_plugins')) require_once ABSPATH . 'wp-admin/includes/plugin.php';
+          $out = ['timestamp'=>gmdate('c')];
+          $active_before = get_option('active_plugins', []);
+          $out['before'] = ['active_plugins'=>array_values($active_before),'active_count'=>count($active_before)];
+          $plugin_dir = WP_PLUGIN_DIR . '/wp-ai-chatbot-connector';
+          $plugin_file_rel = 'wp-ai-chatbot-connector/ai-chatbot-connector.php';
+          $plugin_file_abs = WP_PLUGIN_DIR . '/' . $plugin_file_rel;
+          $github_raw = 'https://raw.githubusercontent.com/sourovdeb/wp-ai-chatbot-connector/main/ai-chatbot-connector.php';
+          $install = ['attempted'=>false,'downloaded'=>false,'bytes'=>0,'error'=>null];
+          if (!file_exists($plugin_file_abs)) {
+            $install['attempted']=true;
+            if (!is_dir($plugin_dir)) wp_mkdir_p($plugin_dir);
+            $body = wp_remote_retrieve_body(wp_remote_get($github_raw, ['timeout'=>60]));
+            if (empty($body) || strpos($body,'<?php')!==0) { $install['error']='GitHub download failed'; }
+            else { $w=file_put_contents($plugin_file_abs,$body); if($w===false)$install['error']='write failed'; else {$install['downloaded']=true;$install['bytes']=$w;} }
+          }
+          $out['plugin_install']=$install;
+          $deactivate=['aicu-engine-reach.php','wp-ai-bridge.php','wp-ai-studio-bridge.php','aicu-command-center.php','aicu-ollama-uploader.php'];
+          $deactivated=[];
+          foreach($deactivate as $p){ if(is_plugin_active($p)){ deactivate_plugins($p,false,false); $deactivated[]=$p; } }
+          $out['deactivated']=$deactivated;
+          $candidates=['wp-ai-chatbot-connector/ai-chatbot-connector.php','wp-ai-chatbot-connector/wp-ai-chatbot-connector.php'];
+          $activated=null; $activate_errors=[];
+          foreach($candidates as $c){
+            if(!file_exists(WP_PLUGIN_DIR.'/'.$c)){ $activate_errors[]="missing: $c"; continue; }
+            $r=activate_plugin($c,'',false,true);
+            if(is_wp_error($r)){ $activate_errors[]=$c.': '.$r->get_error_message(); continue; }
+            $activated=$c; break;
+          }
+          $out['activated']=$activated; $out['activate_errors']=$activate_errors;
+          $deleted=[];
+          foreach(['admin.css','admin.js','readme.txt','start.bat'] as $n){ $path=WP_PLUGIN_DIR.'/'.$n; if(is_file($path)&&@unlink($path))$deleted[]=$n; }
+          foreach(glob(WP_PLUGIN_DIR.'/*.zip')?:[] as $z){ if(is_file($z)&&@unlink($z))$deleted[]=basename($z); }
+          $out['deleted_junk']=$deleted;
+          $active_after=get_option('active_plugins',[]);
+          $out['after']=['active_plugins'=>array_values($active_after),'active_count'=>count($active_after)];
+          $out['self_deleted']=@unlink(__FILE__);
+          echo json_encode($out, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES);
+          RUNNER
+          CONTENT=$(base64 -w 0 plugin-manager-runner.php)
+          curl -sS -X POST "https://www.sourovdeb.com/deploy.php?key=0767044896thevenet_" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=plugin-manager-runner.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee runner-upload.json
+
+      - name: Execute runner
+        run: |
+          curl -sS "https://www.sourovdeb.com/plugin-manager-runner.php?key=0767044896thevenet_" | tee runner-output.json
+
+      - name: Fetch final plugin list
+        run: |
+          curl -sS "https://www.sourovdeb.com/wp-json/sourov-diagnostic/v1/plugins" | tee final-plugins.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-results
+          path: |
+            hostinger-api.json
+            plugin-upload.json
+            runner-upload.json
+            runner-output.json
+            final-plugins.json
