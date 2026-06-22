@@ -1,0 +1,77 @@
+name: Deploy Sourov Schedule Fix
+
+on:
+  workflow_dispatch:
+
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
+jobs:
+  deploy-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload sourov-ai-controller v1.2
+        run: |
+          set -euo pipefail
+          CONTENT=$(base64 -w 0 deploy/sourov-ai-controller-v1.2.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=wp-content/plugins/sourov-ai-controller.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee step1-controller-upload.json
+
+      - name: Upload fix-published-to-future.php
+        run: |
+          set -euo pipefail
+          CONTENT=$(base64 -w 0 deploy/fix-published-to-future.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=sourov-fix-published-to-future.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee step2-fix-upload.json
+
+      - name: Run fix-published-to-future
+        run: |
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/sourov-fix-published-to-future.php?key=${DEPLOY_KEY}&interval=60&limit=50&start_hours=1" \
+            | tee step3-fix-run.json
+
+      - name: Fetch public status
+        run: |
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/wp-json/sourov/v1/status" | tee step4-status.json
+
+      - name: Test schedule-drafts
+        run: |
+          set -euo pipefail
+          curl --fail -sS -X POST "${DEPLOY_BASE}/wp-json/sourov/v1/schedule-drafts" \
+            -H "Content-Type: application/json" \
+            -H "X-Sourov-Key: ${DEPLOY_KEY}" \
+            -d '{"interval":60,"offset":0,"limit":3,"start_hours":2,"apply_category":true,"apply_sections":true,"apply_tags":true}' \
+            | tee step5-schedule-drafts.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('step5-schedule-drafts.json'))
+          results = data.get('results', [])
+          assert results, 'No results returned'
+          for item in results:
+              assert item.get('status') == 'future', item
+              assert item.get('scheduled'), item
+          print('schedule-drafts verification passed:', len(results), 'posts')
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sourov-schedule-fix-results
+          path: |
+            step1-controller-upload.json
+            step2-fix-upload.json
+            step3-fix-run.json
+            step4-status.json
+            step5-schedule-drafts.json
