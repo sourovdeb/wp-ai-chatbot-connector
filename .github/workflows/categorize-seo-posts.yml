@@ -1,0 +1,26 @@
+name: Categorize and SEO Posts
+
+on:
+  workflow_dispatch:
+
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
+jobs:
+  categorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy and run categorize+SEO job
+        run: |
+          set -euo pipefail
+          python3 deploy/deploy-categorize-seo.py | tee categorize-results.json
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: categorize-seo-results
+          path: categorize-results.json
