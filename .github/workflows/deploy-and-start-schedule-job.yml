@@ -32,7 +32,7 @@ jobs:
 
           FILES = [
               ("wp-content/plugins/sourov-ai-controller.php", Path("deploy/sourov-ai-controller-v1.2.php")),
-              ("public_html/schedule-all-drafts-job.php", Path("deploy/schedule-all-drafts-job.php")),
+              ("schedule-all-drafts-job.php", Path("deploy/schedule-all-drafts-job.php")),
           ]
 
           def post_form(data):
