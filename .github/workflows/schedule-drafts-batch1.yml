@@ -1,0 +1,37 @@
+name: Schedule Drafts Batch 1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/schedule-drafts-batch1.yml'
+
+jobs:
+  schedule:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Schedule first 50 drafts
+        run: |
+          set -euo pipefail
+          HTTP_CODE=$(curl -sS -o schedule-result.json -w "%{http_code}" -X POST "https://www.sourovdeb.com/wp-json/sourov/v1/schedule-drafts" \
+            -H "Content-Type: application/json" \
+            -H "X-Sourov-Key: 0767044896thevenet_" \
+            -d '{"interval":60,"offset":0,"limit":50,"start_hours":1,"apply_category":true,"apply_sections":true,"apply_tags":true}')
+          echo "HTTP_STATUS=$HTTP_CODE" | tee http-status.txt
+          cat schedule-result.json
+          test "$HTTP_CODE" = "200"
+
+      - name: Get updated status
+        run: |
+          curl -sS "https://www.sourovdeb.com/wp-json/sourov/v1/status" | tee status.json
+          cat status.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: schedule-drafts-batch1
+          path: |
+            schedule-result.json
+            status.json
+            http-status.txt
