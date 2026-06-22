@@ -1,0 +1,83 @@
+name: Deploy and Start Schedule Job
+
+on:
+  workflow_dispatch:
+
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
+jobs:
+  deploy-and-start:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload files, start job, poll status
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import base64
+          import json
+          import ssl
+          import time
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          BASE = "https://www.sourovdeb.com"
+          KEY = "0767044896thevenet_"
+          DEPLOY = f"{BASE}/deploy.php?key={KEY}"
+          CTX = ssl.create_default_context()
+
+          FILES = [
+              ("wp-content/plugins/sourov-ai-controller.php", Path("deploy/sourov-ai-controller-v1.2.php")),
+              ("public_html/schedule-all-drafts-job.php", Path("deploy/schedule-all-drafts-job.php")),
+          ]
+
+          def post_form(data):
+              body = urllib.parse.urlencode(data).encode("utf-8")
+              req = urllib.request.Request(DEPLOY, data=body, method="POST")
+              req.add_header("Content-Type", "application/x-www-form-urlencoded")
+              with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          def upload(remote, local):
+              return post_form({
+                  "action": "upload",
+                  "path": remote,
+                  "encoded": "true",
+                  "content": base64.b64encode(local.read_bytes()).decode("ascii"),
+              })
+
+          def get_url(url):
+              with urllib.request.urlopen(url, context=CTX, timeout=120) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          out = {"uploads": []}
+          for remote, local in FILES:
+              out["uploads"].append({"path": remote, "result": upload(remote, local)})
+
+          start_url = (
+              f"{BASE}/schedule-all-drafts-job.php?"
+              f"key={urllib.parse.quote(KEY)}&action=start&interval=60&start_hours=1&batch=75"
+          )
+          out["start"] = get_url(start_url)
+
+          for i in range(6):
+              time.sleep(30)
+              status_url = f"{BASE}/schedule-all-drafts-job.php?key={urllib.parse.quote(KEY)}&action=status"
+              status = get_url(status_url)
+              out.setdefault("polls", []).append(status)
+
+          out["final_status"] = get_url(f"{BASE}/wp-json/sourov/v1/status")
+          print(json.dumps(out, indent=2))
+          with open("deploy-results.json", "w") as f:
+              json.dump(out, f, indent=2)
+          PY
+
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-schedule-job-results
+          path: deploy-results.json
