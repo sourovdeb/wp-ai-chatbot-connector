@@ -1,7 +1,7 @@
 <?php
 /**
  * Self-chaining bulk draft scheduler for sourovdeb.com
- * Upload to WP root via deploy.php → public_html/schedule-all-drafts-job.php
+ * Upload to WP root via deploy.php → schedule-all-drafts-job.php (NOT public_html/ prefix)
  * Start once: GET /schedule-all-drafts-job.php?key=SECRET&action=start
  * Auto-continues server-side until all drafts scheduled, then self-deletes.
  */
@@ -212,9 +212,11 @@ if ($action === 'tick') {
     if (count($log) > 100) $log = array_slice($log, -100);
     update_option(SOUROV_JOB_LOG_OPTION, $log, false);
 
-    if ($remaining > 0 && $n > 0) {
+    if ($remaining > 0) {
         update_option(SOUROV_JOB_OPTION, $job, false);
-        sourov_job_trigger_next($job);
+        if ($n > 0) {
+            sourov_job_trigger_next($job);
+        }
         echo json_encode([
             'ok' => true,
             'status' => 'running',
@@ -222,6 +224,7 @@ if ($action === 'tick') {
             'total_scheduled' => $job['total_scheduled'],
             'remaining_drafts' => $remaining,
             'sample' => array_slice($processed, 0, 3),
+            'note' => $n === 0 ? 'tick processed zero posts; job kept alive for retry' : null,
         ]);
         exit;
     }

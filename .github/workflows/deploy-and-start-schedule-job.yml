@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Upload files, start job, poll status
+      - name: Upload files, verify, start job, poll status
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -51,24 +51,36 @@ jobs:
               })
 
           def get_url(url):
-              with urllib.request.urlopen(url, context=CTX, timeout=120) as resp:
+              req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+              with urllib.request.urlopen(req, context=CTX, timeout=120) as resp:
                   return json.loads(resp.read().decode("utf-8"))
 
           out = {"uploads": []}
           for remote, local in FILES:
-              out["uploads"].append({"path": remote, "result": upload(remote, local)})
+              result = upload(remote, local)
+              out["uploads"].append({"path": remote, "result": result})
+              assert result.get("status") == "uploaded", result
+
+          verify = get_url(f"{DEPLOY}&action=download&path=schedule-all-drafts-job.php")
+          assert verify.get("status") == "ok", verify
+          out["verify_download"] = {"status": verify.get("status"), "size": verify.get("size")}
 
           start_url = (
               f"{BASE}/schedule-all-drafts-job.php?"
               f"key={urllib.parse.quote(KEY)}&action=start&interval=60&start_hours=1&batch=75"
           )
           out["start"] = get_url(start_url)
+          print("START_RESPONSE:", json.dumps(out["start"], indent=2))
 
           for i in range(6):
               time.sleep(30)
               status_url = f"{BASE}/schedule-all-drafts-job.php?key={urllib.parse.quote(KEY)}&action=status"
-              status = get_url(status_url)
-              out.setdefault("polls", []).append(status)
+              try:
+                  status = get_url(status_url)
+              except Exception as e:
+                  status = {"poll_error": str(e), "wp_status": get_url(f"{BASE}/wp-json/sourov/v1/status")}
+              out.setdefault("polls", []).append({"t": i + 1, "data": status})
+              print(f"POLL_{i+1}:", json.dumps(status, indent=2))
 
           out["final_status"] = get_url(f"{BASE}/wp-json/sourov/v1/status")
           print(json.dumps(out, indent=2))
