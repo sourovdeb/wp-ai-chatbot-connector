@@ -2,15 +2,17 @@
 /**
  * Plugin Name: AI Chatbot Connector (Ollama / Grok / OpenRouter)
  * Plugin URI: https://github.com/sourovdeb/wp-ai-chatbot-connector
- * Description: v0.4 - Dual mode: visitor site search/nav + admin AI assistant (frontend + wp-admin).
- * Version: 0.4.0
+ * Description: v0.5 - Dual mode widgets + OpenRouter fallback chain + Google Gemini final fallback + site-aware admin AI.
+ * Version: 0.5.0
  * Author: Sourov Deb (via Grok)
  * License: GPL v2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('AI_CHATBOT_VERSION', '0.4.0');
+define('AI_CHATBOT_VERSION', '0.5.0');
+define('AI_CHATBOT_OPENROUTER_ENDPOINT', 'https://openrouter.ai/api/v1');
+define('AI_CHATBOT_GOOGLE_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta');
 
 /* ── Capabilities ─────────────────────────────────────────────────────── */
 
@@ -37,6 +39,15 @@ function ai_chatbot_register_settings() {
     register_setting('ai_chatbot_settings', 'ai_chatbot_temperature');
     register_setting('ai_chatbot_settings', 'ai_chatbot_timeout');
     register_setting('ai_chatbot_settings', 'ai_chatbot_ignore_cf_access');
+    register_setting('ai_chatbot_settings', 'ai_chatbot_google_api_key');
+    register_setting('ai_chatbot_settings', 'ai_chatbot_google_model', [
+        'type' => 'string',
+        'default' => 'gemini-2.0-flash-lite',
+    ]);
+    register_setting('ai_chatbot_settings', 'ai_chatbot_enable_fallbacks', [
+        'type' => 'string',
+        'default' => 'yes',
+    ]);
 }
 
 function ai_chatbot_sanitize_provider($value) {
@@ -105,6 +116,193 @@ function ai_chatbot_resolve_config() {
     ];
 }
 
+/** OpenRouter free models (tried in order after primary). */
+function ai_chatbot_openrouter_free_models() {
+    return [
+        'meta-llama/llama-3.2-3b-instruct:free',
+        'qwen/qwen-2.5-7b-instruct:free',
+        'microsoft/phi-3-mini-128k-instruct:free',
+        'google/gemma-2-9b-it:free',
+        'mistralai/mistral-7b-instruct:free',
+        'cohere/north-mini-code:free',
+        'nvidia/nemotron-3-ultra-550b-a55b:free',
+        'openrouter/free',
+    ];
+}
+
+/** Cheapest paid OpenRouter model (ultra-low per-token). */
+function ai_chatbot_openrouter_cheap_model() {
+    return 'nex-agi/nex-n2-pro';
+}
+
+function ai_chatbot_get_model_fallback_chain($cfg) {
+    $chain = [];
+    if (!empty($cfg['model'])) {
+        $chain[] = $cfg['model'];
+    }
+    if (ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')) {
+        $chain = array_merge($chain, ai_chatbot_openrouter_free_models(), [ai_chatbot_openrouter_cheap_model()]);
+    }
+    $seen = [];
+    $out = [];
+    foreach ($chain as $m) {
+        $m = trim((string) $m);
+        if ($m === '' || isset($seen[$m])) {
+            continue;
+        }
+        $seen[$m] = true;
+        $out[] = $m;
+    }
+    return $out;
+}
+
+function ai_chatbot_http_post_json($url, $payload, $headers, $timeout = 60) {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => wp_json_encode($payload),
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => max(10, (int) $timeout),
+        CURLOPT_CONNECTTIMEOUT => 15,
+    ]);
+    $response = curl_exec($ch);
+    $http_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_err = curl_error($ch);
+    curl_close($ch);
+    return ['body' => (string) $response, 'code' => $http_code, 'curl_err' => $curl_err];
+}
+
+function ai_chatbot_call_openrouter_completions($cfg, $model, $messages, $max_tokens) {
+    $endpoint = rtrim($cfg['endpoint'] ?: AI_CHATBOT_OPENROUTER_ENDPOINT, '/');
+    $url = $endpoint . '/chat/completions';
+    $payload = [
+        'model' => $model,
+        'messages' => $messages,
+        'max_tokens' => $max_tokens,
+        'temperature' => $cfg['temperature'],
+    ];
+    $headers = [
+        'Content-Type: application/json',
+        'HTTP-Referer: ' . home_url('/'),
+        'X-Title: sourovdeb.com AI Chatbot',
+    ];
+    if (!empty($cfg['api_key'])) {
+        $headers[] = 'Authorization: Bearer ' . $cfg['api_key'];
+    }
+    if (!empty($cfg['cf_access_id']) && !empty($cfg['cf_access_secret'])) {
+        $headers[] = 'CF-Access-Client-Id: ' . $cfg['cf_access_id'];
+        $headers[] = 'CF-Access-Client-Secret: ' . $cfg['cf_access_secret'];
+    }
+
+    $res = ai_chatbot_http_post_json($url, $payload, $headers, $cfg['timeout']);
+    if ($res['curl_err']) {
+        return ['ok' => false, 'error' => 'Connection failed: ' . $res['curl_err']];
+    }
+    if ($res['code'] !== 200) {
+        return ['ok' => false, 'error' => 'HTTP ' . $res['code'] . ': ' . substr($res['body'], 0, 400)];
+    }
+    $data = json_decode($res['body'], true);
+    $reply = $data['choices'][0]['message']['content'] ?? null;
+    return $reply === null
+        ? ['ok' => false, 'error' => 'Empty OpenRouter response']
+        : ['ok' => true, 'reply' => $reply];
+}
+
+function ai_chatbot_messages_to_gemini($messages) {
+    $system = '';
+    $contents = [];
+    foreach ($messages as $msg) {
+        $role = $msg['role'] ?? '';
+        $text = trim((string) ($msg['content'] ?? ''));
+        if ($text === '') {
+            continue;
+        }
+        if ($role === 'system') {
+            $system .= ($system === '' ? '' : "\n") . $text;
+            continue;
+        }
+        $contents[] = [
+            'role' => $role === 'assistant' ? 'model' : 'user',
+            'parts' => [['text' => $text]],
+        ];
+    }
+    if (empty($contents)) {
+        $contents[] = ['role' => 'user', 'parts' => [['text' => 'Hello']]];
+    }
+    return ['system' => $system, 'contents' => $contents];
+}
+
+function ai_chatbot_call_google_gemini($messages, $max_tokens, $temperature = 0.7) {
+    $api_key = trim((string) get_option('ai_chatbot_google_api_key', ''));
+    if ($api_key === '') {
+        return ['ok' => false, 'error' => 'Google API key not configured.'];
+    }
+    $model = trim((string) get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite'));
+    $converted = ai_chatbot_messages_to_gemini($messages);
+    $payload = [
+        'contents' => $converted['contents'],
+        'generationConfig' => [
+            'maxOutputTokens' => max(32, (int) $max_tokens),
+            'temperature' => (float) $temperature,
+        ],
+    ];
+    if ($converted['system'] !== '') {
+        $payload['systemInstruction'] = ['parts' => [['text' => $converted['system']]]];
+    }
+    $url = AI_CHATBOT_GOOGLE_ENDPOINT . '/models/' . rawurlencode($model) . ':generateContent?key=' . rawurlencode($api_key);
+    $res = ai_chatbot_http_post_json($url, $payload, ['Content-Type: application/json'], 60);
+    if ($res['curl_err']) {
+        return ['ok' => false, 'error' => 'Google connection failed: ' . $res['curl_err']];
+    }
+    if ($res['code'] !== 200) {
+        return ['ok' => false, 'error' => 'Google HTTP ' . $res['code'] . ': ' . substr($res['body'], 0, 400)];
+    }
+    $data = json_decode($res['body'], true);
+    $parts = $data['candidates'][0]['content']['parts'] ?? [];
+    $texts = [];
+    foreach ($parts as $part) {
+        if (!empty($part['text'])) {
+            $texts[] = $part['text'];
+        }
+    }
+    $reply = trim(implode("\n", $texts));
+    return $reply === ''
+        ? ['ok' => false, 'error' => 'Empty Google Gemini response']
+        : ['ok' => true, 'reply' => $reply];
+}
+
+function ai_chatbot_site_audit_snapshot() {
+    $counts = wp_count_posts('post');
+    $published = (int) ($counts->publish ?? 0);
+    $scheduled = (int) ($counts->future ?? 0);
+    $drafts = (int) ($counts->draft ?? 0);
+    $theme = wp_get_theme();
+    $plugins = get_option('active_plugins', []);
+    $lines = [
+        'WordPress audit — ' . home_url(),
+        'WP version: ' . get_bloginfo('version'),
+        'PHP: ' . PHP_VERSION,
+        'Theme: ' . $theme->get('Name') . ' (' . $theme->get_stylesheet() . ')',
+        'Posts: published=' . $published . ', scheduled=' . $scheduled . ', drafts=' . $drafts,
+        'Active plugins: ' . count($plugins),
+        'REST: ' . rest_url('sourov/v1/status'),
+        'Host: Hostinger LiteSpeed (sourovdeb.com)',
+    ];
+    if ($scheduled > 100) {
+        $lines[] = 'WARNING: Large scheduled backlog — verify hPanel cron + publish-fixer.';
+    }
+    return implode("\n", $lines);
+}
+
+function ai_chatbot_build_admin_system_prompt() {
+    $base = get_option(
+        'ai_chatbot_system_prompt',
+        'You are Sourov\'s WordPress publishing assistant for sourovdeb.com. Help draft content, SEO, scheduling, and site tasks. Never ask for the site URL, hosting login, or API credentials — you already have live site context.'
+    );
+    return "LIVE SITE CONTEXT:\n" . ai_chatbot_site_audit_snapshot() . "\n\n" . $base;
+}
+
 function ai_chatbot_call_api($messages, $max_tokens = 600) {
     $cfg = ai_chatbot_resolve_config();
     if (empty($cfg['endpoint']) && empty($cfg['tunnel_url'])) {
@@ -117,38 +315,43 @@ function ai_chatbot_call_api($messages, $max_tokens = 600) {
             return ['ok' => false, 'error' => $result['error'] ?? 'Ollama call failed'];
         }
         $content = is_array($result['parsed']) ? wp_json_encode($result['parsed']) : ($result['raw'] ?? 'OK');
-        return ['ok' => true, 'reply' => $content];
+        return ['ok' => true, 'reply' => $content, 'model_used' => 'ollama:' . ($cfg['model'] ?? 'default')];
     }
 
-    $url = rtrim($cfg['endpoint'], '/') . '/chat/completions';
-    $payload = ['model' => $cfg['model'], 'messages' => $messages, 'max_tokens' => $max_tokens, 'temperature' => $cfg['temperature']];
-    $headers = ['Content-Type: application/json'];
-    if (!empty($cfg['api_key'])) $headers[] = 'Authorization: Bearer ' . $cfg['api_key'];
-    if (!empty($cfg['cf_access_id']) && !empty($cfg['cf_access_secret'])) {
-        $headers[] = 'CF-Access-Client-Id: ' . $cfg['cf_access_id'];
-        $headers[] = 'CF-Access-Client-Secret: ' . $cfg['cf_access_secret'];
+    if ($cfg['provider'] === 'openrouter' && ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')) {
+        $errors = [];
+        foreach (ai_chatbot_get_model_fallback_chain($cfg) as $model) {
+            $result = ai_chatbot_call_openrouter_completions($cfg, $model, $messages, $max_tokens);
+            if ($result['ok']) {
+                $result['model_used'] = 'openrouter:' . $model;
+                return $result;
+            }
+            $errors[] = $model . ' → ' . $result['error'];
+        }
+        $google = ai_chatbot_call_google_gemini($messages, $max_tokens, $cfg['temperature']);
+        if ($google['ok']) {
+            $google['model_used'] = 'google:' . get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite');
+            return $google;
+        }
+        $errors[] = 'google → ' . $google['error'];
+        return ['ok' => false, 'error' => 'All providers failed. ' . implode(' | ', array_slice($errors, 0, 6))];
     }
 
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => wp_json_encode($payload),
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => max(10, $cfg['timeout']),
-        CURLOPT_CONNECTTIMEOUT => 15,
-    ]);
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curl_err = curl_error($ch);
-    curl_close($ch);
+    $result = ai_chatbot_call_openrouter_completions($cfg, $cfg['model'], $messages, $max_tokens);
+    if ($result['ok']) {
+        $result['model_used'] = ($cfg['provider'] ?? 'custom') . ':' . $cfg['model'];
+        return $result;
+    }
 
-    if ($curl_err) return ['ok' => false, 'error' => 'Connection failed: ' . $curl_err];
-    if ($http_code !== 200) return ['ok' => false, 'error' => 'HTTP ' . $http_code . ': ' . substr((string) $response, 0, 500)];
-
-    $data = json_decode($response, true);
-    $reply = $data['choices'][0]['message']['content'] ?? null;
-    return $reply === null ? ['ok' => false, 'error' => 'Empty response'] : ['ok' => true, 'reply' => $reply];
+    if (ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')) {
+        $google = ai_chatbot_call_google_gemini($messages, $max_tokens, $cfg['temperature']);
+        if ($google['ok']) {
+            $google['model_used'] = 'google:' . get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite');
+            return $google;
+        }
+        $result['error'] .= ' | Google fallback: ' . $google['error'];
+    }
+    return $result;
 }
 
 /* ── Visitor: site search & navigation (no external AI) ───────────────── */
@@ -276,7 +479,20 @@ function ai_chatbot_admin_ajax_handler() {
     $history = json_decode($history_json, true);
     if (!is_array($history)) $history = [];
 
-    $system = get_option('ai_chatbot_system_prompt', 'You are Sourov\'s WordPress publishing assistant. Help draft content, SEO, scheduling, and site tasks.');
+    if (preg_match('/\b(audit|health\s*check|site\s*status)\b/i', $message)) {
+        $audit = ai_chatbot_site_audit_snapshot();
+        $result = ai_chatbot_call_api([
+            ['role' => 'system', 'content' => ai_chatbot_build_admin_system_prompt()],
+            ['role' => 'user', 'content' => "Using this live audit data, summarize site health and top 3 actions:\n\n" . $audit],
+        ], 500);
+        if ($result['ok']) {
+            $suffix = !empty($result['model_used']) ? "\n\n[via " . $result['model_used'] . ']' : '';
+            wp_send_json_success(['reply' => $result['reply'] . $suffix]);
+        }
+        wp_send_json_success(['reply' => $audit . "\n\n(AI summary unavailable: " . ($result['error'] ?? 'unknown') . ')']);
+    }
+
+    $system = ai_chatbot_build_admin_system_prompt();
     $messages = [['role' => 'system', 'content' => $system]];
     foreach ($history as $turn) {
         if (isset($turn['role'], $turn['content'])) {
@@ -291,7 +507,11 @@ function ai_chatbot_admin_ajax_handler() {
     if (!$result['ok']) {
         wp_send_json_error($result['error']);
     }
-    wp_send_json_success(['reply' => $result['reply']]);
+    $reply = $result['reply'];
+    if (!empty($result['model_used'])) {
+        $reply .= "\n\n[via " . $result['model_used'] . ']';
+    }
+    wp_send_json_success(['reply' => $reply]);
 }
 add_action('wp_ajax_ai_chatbot_admin_query', 'ai_chatbot_admin_ajax_handler');
 
@@ -426,7 +646,9 @@ function ai_chatbot_run_diagnostics() {
         'Admin widget (frontend): ' . (ai_chatbot_opt_on('ai_chatbot_admin_frontend_enabled') ? 'ON (logged-in editors)' : 'OFF'),
         'Admin widget (wp-admin): ' . (ai_chatbot_opt_on('ai_chatbot_admin_wpadmin_enabled') ? 'ON' : 'OFF'),
         'AI provider: ' . $cfg['provider'],
-        'AI model: ' . $cfg['model'],
+        'AI model (primary): ' . $cfg['model'],
+        'Fallback chain: ' . (ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes') ? implode(', ', ai_chatbot_get_model_fallback_chain($cfg)) . ' → google:' . get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite') : 'OFF'),
+        'Google key: ' . (get_option('ai_chatbot_google_api_key', '') ? 'set' : 'missing'),
     ];
     if ($cfg['provider'] === 'shared_ollama') {
         $tunnel = $cfg['tunnel_url'];
@@ -490,7 +712,10 @@ function ai_chatbot_settings_page() {
                 </td></tr>
                 <tr class="ai-chatbot-custom-fields"><th>Endpoint</th><td><input type="url" name="ai_chatbot_endpoint" value="<?php echo esc_attr(get_option('ai_chatbot_endpoint', 'https://openrouter.ai/api/v1')); ?>" class="regular-text" /></td></tr>
                 <tr class="ai-chatbot-custom-fields"><th>API Key</th><td><input type="password" name="ai_chatbot_api_key" value="<?php echo esc_attr(get_option('ai_chatbot_api_key')); ?>" class="regular-text" autocomplete="new-password" /></td></tr>
-                <tr class="ai-chatbot-custom-fields"><th>Model</th><td><input type="text" name="ai_chatbot_model" value="<?php echo esc_attr(get_option('ai_chatbot_model', 'meta-llama/llama-3.2-3b-instruct:free')); ?>" class="regular-text" /></td></tr>
+                <tr class="ai-chatbot-custom-fields"><th>Primary model</th><td><input type="text" name="ai_chatbot_model" value="<?php echo esc_attr(get_option('ai_chatbot_model', 'meta-llama/llama-3.2-3b-instruct:free')); ?>" class="regular-text" /><p class="description">OpenRouter primary; 8 free models + cheapest paid auto-fallback if enabled below.</p></td></tr>
+                <tr><th>Model fallbacks</th><td><label><input type="checkbox" name="ai_chatbot_enable_fallbacks" value="yes" <?php checked(ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')); ?> /> Try free OpenRouter models → <?php echo esc_html(ai_chatbot_openrouter_cheap_model()); ?> → Google Gemini</label></td></tr>
+                <tr><th>Google API key</th><td><input type="password" name="ai_chatbot_google_api_key" value="<?php echo esc_attr(get_option('ai_chatbot_google_api_key', '')); ?>" class="regular-text" autocomplete="new-password" /><p class="description">Final fallback (Gemini Flash Lite).</p></td></tr>
+                <tr><th>Google model</th><td><input type="text" name="ai_chatbot_google_model" value="<?php echo esc_attr(get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite')); ?>" class="regular-text" /></td></tr>
                 <tr><th>Ignore CF Access</th><td><label><input type="checkbox" name="ai_chatbot_ignore_cf_access" value="yes" <?php checked(ai_chatbot_opt_on('ai_chatbot_ignore_cf_access', 'no')); ?> /> Skip Cloudflare Access headers for Ollama</label></td></tr>
                 <tr><th>System prompt</th><td><textarea name="ai_chatbot_system_prompt" rows="3" class="large-text"><?php echo esc_textarea(get_option('ai_chatbot_system_prompt', 'You are Sourov\'s WordPress publishing assistant.')); ?></textarea></td></tr>
                 <tr><th>Post/Schedule buttons</th><td><label><input type="checkbox" name="ai_chatbot_schedule_enabled" value="yes" <?php checked(ai_chatbot_opt_on('ai_chatbot_schedule_enabled', 'no')); ?> /> Show draft/schedule after admin AI replies</label></td></tr>
@@ -509,8 +734,9 @@ function ai_chatbot_settings_page() {
 add_action('admin_post_ai_chatbot_test_connection', function () {
     if (!current_user_can('manage_options')) wp_die('Forbidden');
     check_admin_referer('ai_chatbot_test');
-    $result = ai_chatbot_call_api([['role' => 'user', 'content' => 'Reply: pong']], 20);
-    $msg = $result['ok'] ? ('OK: ' . substr($result['reply'], 0, 120)) : $result['error'];
+    $result = ai_chatbot_call_api([['role' => 'user', 'content' => 'Reply with exactly: pong']], 20);
+    $via = !empty($result['model_used']) ? (' [' . $result['model_used'] . ']') : '';
+    $msg = $result['ok'] ? ('OK' . $via . ': ' . substr($result['reply'], 0, 120)) : $result['error'];
     wp_safe_redirect(admin_url('options-general.php?page=ai-chatbot-connector&test_ok=' . ($result['ok'] ? '1' : '0') . '&test_result=' . rawurlencode($msg)));
     exit;
 });
@@ -520,6 +746,11 @@ function ai_chatbot_activate() {
     if (!get_option('ai_chatbot_admin_frontend_enabled')) update_option('ai_chatbot_admin_frontend_enabled', 'yes');
     if (!get_option('ai_chatbot_admin_wpadmin_enabled')) update_option('ai_chatbot_admin_wpadmin_enabled', 'yes');
     if (!get_option('ai_chatbot_provider')) update_option('ai_chatbot_provider', 'openrouter');
+    if (!get_option('ai_chatbot_enable_fallbacks')) update_option('ai_chatbot_enable_fallbacks', 'yes');
+    if (!get_option('ai_chatbot_google_model')) update_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite');
+    if (!get_option('ai_chatbot_system_prompt')) {
+        update_option('ai_chatbot_system_prompt', 'You are Sourov\'s WordPress publishing assistant for sourovdeb.com (Hostinger, LiteSpeed, PHP 8.3). Help draft posts, SEO, scheduling, and audits. Never ask for site URL or credentials.');
+    }
     delete_option('ai_chatbot_floating_widget');
 }
 register_activation_hook(__FILE__, 'ai_chatbot_activate');
@@ -528,5 +759,15 @@ add_action('plugins_loaded', function () {
     if (get_option('ai_chatbot_floating_widget') === 'yes' && get_option('ai_chatbot_visitor_enabled') === false) {
         update_option('ai_chatbot_visitor_enabled', 'yes');
         delete_option('ai_chatbot_floating_widget');
+    }
+    $db_ver = get_option('ai_chatbot_db_version', '0.4.0');
+    if (version_compare($db_ver, '0.5.0', '<')) {
+        if (!get_option('ai_chatbot_enable_fallbacks')) {
+            update_option('ai_chatbot_enable_fallbacks', 'yes');
+        }
+        if (!get_option('ai_chatbot_google_model')) {
+            update_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite');
+        }
+        update_option('ai_chatbot_db_version', '0.5.0');
     }
 });
