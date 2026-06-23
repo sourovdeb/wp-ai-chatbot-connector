@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'ai-chatbot-connector.php'
+      - 'chatbot-v050-options-runner.php.template'
       - 'crawl-page.php'
       - 'sourov-ai-chatbot/**'
       - 'activate-sourov-chatbot.php'
@@ -31,6 +33,31 @@ jobs:
             --data-urlencode "content=$CONTENT" \
             | tee plugin-upload.json
 
+      - name: Verify plugin upload size
+        run: |
+          set -euo pipefail
+          curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/wp-ai-chatbot-connector/" \
+            | tee plugin-list.json
+          SIZE=$(python3 -c "import json; d=json.load(open('plugin-list.json')); print(d['items'][0]['size'])")
+          echo "Uploaded plugin size: $SIZE bytes"
+          test "$SIZE" -gt 35000
+
+      - name: Upload and run v0.5 options runner
+        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          sed "s|__GEMINI_API_KEY__|${GEMINI_API_KEY}|" chatbot-v050-options-runner.php.template > chatbot-v050-options-runner.php
+          CONTENT=$(base64 -w 0 chatbot-v050-options-runner.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=chatbot-v050-options-runner.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee options-runner-upload.json
+          curl --fail -sS "${DEPLOY_BASE}/chatbot-v050-options-runner.php?key=${DEPLOY_KEY}" | tee options-runner-output.json
+
       - name: Upload crawl-page.php
         run: |
           set -euo pipefail
@@ -52,15 +79,6 @@ jobs:
             --data-urlencode "encoded=true" \
             --data-urlencode "content=$CONTENT" \
             | tee chatbot-upload.json
-
-      - name: Verify plugin upload size
-        run: |
-          set -euo pipefail
-          curl --fail -sS "${DEPLOY_BASE}/deploy.php?action=list&key=${DEPLOY_KEY}&path=wp-content/plugins/wp-ai-chatbot-connector/" \
-            | tee plugin-list.json
-          SIZE=$(python3 -c "import json; d=json.load(open('plugin-list.json')); print(d['items'][0]['size'])")
-          echo "Uploaded plugin size: $SIZE bytes"
-          test "$SIZE" -gt 25000
 
       - name: Verify crawl-page and chatbot uploads
         run: |
@@ -111,6 +129,8 @@ jobs:
           name: deploy-results
           path: |
             plugin-upload.json
+            options-runner-upload.json
+            options-runner-output.json
             crawl-upload.json
             chatbot-upload.json
             plugin-list.json
