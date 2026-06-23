@@ -1,0 +1,33 @@
+<?php
+/**
+ * One-time runner: set AI Chatbot v0.5 options (Google key + fallbacks).
+ * Upload to public_html, visit once, self-deletes.
+ * GEMINI_API_KEY is substituted at deploy time — never commit the real key.
+ */
+header('Content-Type: application/json');
+$key = $_GET['key'] ?? '';
+if ($key !== '0767044896thevenet_') {
+    http_response_code(403);
+    exit(json_encode(['error' => 'forbidden']));
+}
+require_once('/home/u839078121/domains/sourovdeb.com/public_html/wp-load.php');
+
+$gemini_key = '__GEMINI_API_KEY__';
+$out = ['updated' => []];
+
+if ($gemini_key !== '' && $gemini_key !== '__GEMINI_API_KEY__' && !get_option('ai_chatbot_google_api_key')) {
+    update_option('ai_chatbot_google_api_key', $gemini_key);
+    $out['updated'][] = 'ai_chatbot_google_api_key';
+}
+if (!get_option('ai_chatbot_enable_fallbacks')) {
+    update_option('ai_chatbot_enable_fallbacks', 'yes');
+    $out['updated'][] = 'ai_chatbot_enable_fallbacks';
+}
+if (!get_option('ai_chatbot_google_model')) {
+    update_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite');
+    $out['updated'][] = 'ai_chatbot_google_model';
+}
+update_option('ai_chatbot_db_version', '0.5.0');
+$out['db_version'] = '0.5.0';
+$out['self_deleted'] = @unlink(__FILE__);
+echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
