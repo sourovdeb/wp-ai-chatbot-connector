@@ -7,6 +7,7 @@ on:
     paths:
       - 'ai-chatbot-connector.php'
       - 'chatbot-v050-options-runner.php.template'
+      - 'chatbot-selftest-runner.php'
       - 'crawl-page.php'
       - 'sourov-ai-chatbot/**'
       - 'activate-sourov-chatbot.php'
@@ -60,6 +61,18 @@ jobs:
             --data-urlencode "content=$CONTENT" \
             | tee options-runner-upload.json
           curl --fail -sS "${DEPLOY_BASE}/chatbot-v050-options-runner.php?key=${DEPLOY_KEY}" | tee options-runner-output.json
+
+      - name: Upload and run chatbot selftest
+        run: |
+          set -euo pipefail
+          CONTENT=$(base64 -w 0 chatbot-selftest-runner.php)
+          curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
+            --data-urlencode "action=upload" \
+            --data-urlencode "path=chatbot-selftest-runner.php" \
+            --data-urlencode "encoded=true" \
+            --data-urlencode "content=$CONTENT" \
+            | tee selftest-upload.json
+          curl --fail -sS "${DEPLOY_BASE}/chatbot-selftest-runner.php?key=${DEPLOY_KEY}" | tee selftest-output.json
 
       - name: Upload crawl-page.php
         run: |
@@ -134,6 +147,8 @@ jobs:
             plugin-upload.json
             options-runner-upload.json
             options-runner-output.json
+            selftest-upload.json
+            selftest-output.json
             crawl-upload.json
             chatbot-upload.json
             plugin-list.json
