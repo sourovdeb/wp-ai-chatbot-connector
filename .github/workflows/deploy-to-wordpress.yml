@@ -43,11 +43,14 @@ jobs:
           test "$SIZE" -gt 35000
 
       - name: Upload and run v0.5 options runner
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
+          if [ -z "${GEMINI_API_KEY}" ]; then
+            echo "GEMINI_API_KEY secret not set; skipping options runner"
+            exit 0
+          fi
           sed "s|__GEMINI_API_KEY__|${GEMINI_API_KEY}|" chatbot-v050-options-runner.php.template > chatbot-v050-options-runner.php
           CONTENT=$(base64 -w 0 chatbot-v050-options-runner.php)
           curl --fail -sS -X POST "${DEPLOY_BASE}/deploy.php?key=${DEPLOY_KEY}" \
