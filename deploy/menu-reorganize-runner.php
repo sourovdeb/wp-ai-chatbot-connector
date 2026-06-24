@@ -167,21 +167,37 @@ function mr_ensure_menu_item($menu_id, $args) {
     return is_wp_error($id) ? 0 : (int) $id;
 }
 
-function mr_remove_menu_item_and_descendants($menu_id, $item_id) {
-    $removed = [];
+function mr_build_menu_parent_map($menu_id) {
     $items = wp_get_nav_menu_items($menu_id);
     $by_parent = [];
-    foreach ($items as $item) {
-        $by_parent[(int) $item->menu_item_parent][] = $item;
-    }
-    $walk = function ($id) use (&$walk, $by_parent, &$removed) {
-        foreach ($by_parent[$id] ?? [] as $child) {
-            $walk((int) $child->ID);
+    if ($items) {
+        foreach ($items as $item) {
+            $by_parent[(int) $item->menu_item_parent][] = (int) $item->ID;
         }
-        wp_delete_post($id, true);
-        $removed[] = $id;
+    }
+    return $by_parent;
+}
+
+function mr_collect_descendant_ids($root_id, $by_parent) {
+    $ids = [];
+    $walk = function ($id) use (&$walk, $by_parent, &$ids) {
+        foreach ($by_parent[$id] ?? [] as $child_id) {
+            $walk($child_id);
+        }
+        $ids[] = $id;
     };
-    $walk((int) $item_id);
+    $walk((int) $root_id);
+    return $ids;
+}
+
+function mr_remove_menu_item_and_descendants($menu_id, $item_id, &$by_parent = null) {
+    if ($by_parent === null) {
+        $by_parent = mr_build_menu_parent_map($menu_id);
+    }
+    $removed = mr_collect_descendant_ids($item_id, $by_parent);
+    foreach ($removed as $id) {
+        wp_delete_post($id, true);
+    }
     return $removed;
 }
 
@@ -203,6 +219,7 @@ function mr_remove_journal_articles_everywhere($menu_id) {
     if (!$items) {
         return [];
     }
+    $by_parent = mr_build_menu_parent_map($menu_id);
     $article_items = [];
     foreach ($items as $item) {
         if ($item->object !== 'page') {
@@ -224,7 +241,7 @@ function mr_remove_journal_articles_everywhere($menu_id) {
             'title' => $item->title,
             'object_id' => (int) $item->object_id,
         ];
-        mr_remove_menu_item_and_descendants($menu_id, $id);
+        mr_remove_menu_item_and_descendants($menu_id, $id, $by_parent);
     }
     return $removed;
 }
@@ -284,6 +301,8 @@ if ($action === 'inspect') {
 }
 
 if ($action === 'apply') {
+    @ini_set('memory_limit', '512M');
+    @set_time_limit(300);
     $menu_id = mr_find_primary_menu_id();
     if (!$menu_id) {
         $menu_id = wp_create_nav_menu('Primary');
@@ -297,6 +316,7 @@ if ($action === 'apply') {
         set_theme_mod('nav_menu_locations', $locs);
     }
 
+    // Strip every journal article link anywhere in the primary menu (including under other top-level items).
     $removed_articles = mr_remove_journal_articles_everywhere($menu_id);
 
     $journal_item = mr_find_journal_parent_item($menu_id);
@@ -371,7 +391,7 @@ if ($action === 'apply') {
         'removed_orphan_children' => $removed_orphans,
         'journal_subtree_after' => mr_journal_subtree_summary($menu_id, $journal_item_id),
         'menu_tree' => mr_menu_tree($menu_id, 2),
-        'self_deleted' => @unlink(__FILE__),
+        'self_deleted' => false,
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     exit;
 }
