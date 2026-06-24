@@ -295,7 +295,7 @@ if ($action === 'inspect') {
         'journal_subtree' => ($menu_id && $journal) ? mr_journal_subtree_summary($menu_id, (int) $journal->ID) : null,
         'menu_tree' => $menu_id ? mr_menu_tree($menu_id, 2) : [],
         'journal_hubs' => JOURNAL_HUBS,
-        'apply_url' => add_query_arg(['key' => $key, 'action' => 'apply'], home_url('/menu-reorganize-runner.php')),
+        'apply_url' => add_query_arg(['key' => $key, 'action' => 'apply'], home_url('/menu-fix-runner.php')),
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     exit;
 }
