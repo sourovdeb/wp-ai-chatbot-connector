@@ -1,0 +1,34 @@
+name: Publish Micro-Entreprise Posts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish French and English posts
+        run: |
+          set -euo pipefail
+          python3 deploy/publish-micro-entreprise-posts.py | tee publish-results.log
+
+      - name: Verify posts live
+        run: |
+          set -euo pipefail
+          curl -fsS "https://sourovdeb.com/wp-json/wp/v2/posts?slug=comment-creer-micro-entreprise-prof-anglais-etape-par-etape" | tee fr-check.json
+          curl -fsS "https://sourovdeb.com/wp-json/wp/v2/posts?slug=how-to-create-micro-entreprise-english-teacher-france-step-by-step-2026" | tee en-check.json
+          python3 -c "
+          import json
+          for name, f in [('FR','fr-check.json'),('EN','en-check.json')]:
+              data = json.load(open(f))
+              assert len(data) >= 1, f'{name} post not found'
+              print(f'{name} OK:', data[0]['link'])
+          "
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-micro-entreprise-results
+          path: publish-results.log
