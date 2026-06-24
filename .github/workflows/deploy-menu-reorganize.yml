@@ -57,14 +57,14 @@ jobs:
           local = Path("deploy/menu-reorganize-runner.php")
           upload = post_form({
               "action": "upload",
-              "path": "menu-reorganize-runner.php",
+              "path": "menu-fix-runner.php",
               "encoded": "true",
               "content": base64.b64encode(local.read_bytes()).decode("ascii"),
           })
           assert upload.get("status") == "uploaded", upload
           time.sleep(1)
           q = urllib.parse.quote(KEY)
-          runner = f"{SITE}/menu-reorganize-runner.php?key={q}"
+          runner = f"{SITE}/menu-fix-runner.php?key={q}"
           inspect = get_url(f"{runner}&action=inspect")
           print("INSPECT:", json.dumps(inspect, indent=2))
           try:
