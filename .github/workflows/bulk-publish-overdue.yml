@@ -6,11 +6,11 @@ on:
       batch_limit:
         description: 'Max posts per batch (1-500)'
         required: false
-        default: '200'
+        default: '50'
       max_batches:
         description: 'Max batches before stopping'
         required: false
-        default: '20'
+        default: '50'
 
 env:
   DEPLOY_BASE: https://www.sourovdeb.com
@@ -24,8 +24,8 @@ jobs:
 
       - name: Bulk publish overdue + wp-cron loop
         env:
-          BATCH_LIMIT: ${{ github.event.inputs.batch_limit || '200' }}
-          MAX_BATCHES: ${{ github.event.inputs.max_batches || '20' }}
+          BATCH_LIMIT: ${{ github.event.inputs.batch_limit || '50' }}
+          MAX_BATCHES: ${{ github.event.inputs.max_batches || '50' }}
         run: |
           set -euo pipefail
           python3 <<'PY'

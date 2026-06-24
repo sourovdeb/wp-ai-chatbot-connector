@@ -3,7 +3,20 @@
  * Publish overdue scheduled (future) posts whose post_date has passed.
  * Upload to WP root via deploy.php, hit once, self-deletes.
  */
-require_once dirname(__FILE__) . '/wp-load.php';
+@ini_set('display_errors', '0');
+@set_time_limit(300);
+
+$report = ['ok' => false, 'errors' => []];
+
+try {
+    require_once dirname(__FILE__) . '/wp-load.php';
+} catch (Throwable $e) {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'wp-load failed', 'message' => $e->getMessage()]);
+    exit;
+}
+
 header('Content-Type: application/json; charset=utf-8');
 
 $key = $_GET['key'] ?? '';
@@ -14,7 +27,7 @@ if (!$secret || !hash_equals((string) $secret, (string) $key)) {
     exit;
 }
 
-$limit = max(1, min(500, (int) ($_GET['limit'] ?? 100)));
+$limit = max(1, min(100, (int) ($_GET['limit'] ?? 50)));
 $dry_run = isset($_GET['dry_run']) && $_GET['dry_run'] === '1';
 $now_gmt = current_time('mysql', true);
 
@@ -32,13 +45,14 @@ $published = [];
 $errors = [];
 
 foreach ($overdue_ids as $post_id) {
-    $post = get_post((int) $post_id);
+    $post_id = (int) $post_id;
+    $post = get_post($post_id);
     if (!$post) {
         continue;
     }
     if ($dry_run) {
         $published[] = [
-            'id' => (int) $post_id,
+            'id' => $post_id,
             'title' => $post->post_title,
             'was_scheduled' => $post->post_date,
             'dry_run' => true,
@@ -46,33 +60,33 @@ foreach ($overdue_ids as $post_id) {
         continue;
     }
 
-    // wp_publish_post() returns void — verify by post_status after
-    wp_publish_post((int) $post_id);
-    clean_post_cache((int) $post_id);
-    $fresh = get_post((int) $post_id);
-
-    if (!$fresh || $fresh->post_status !== 'publish') {
-        $updated = wp_update_post([
-            'ID' => (int) $post_id,
+    try {
+        $update = wp_update_post([
+            'ID' => $post_id,
             'post_status' => 'publish',
         ], true);
-        clean_post_cache((int) $post_id);
-        $fresh = get_post((int) $post_id);
-        if (is_wp_error($updated) || !$fresh || $fresh->post_status !== 'publish') {
-            $errors[] = [
-                'id' => (int) $post_id,
-                'error' => is_wp_error($updated) ? $updated->get_error_message() : 'still not publish after update',
-            ];
+
+        if (is_wp_error($update)) {
+            $errors[] = ['id' => $post_id, 'error' => $update->get_error_message()];
             continue;
         }
-    }
 
-    $published[] = [
-        'id' => (int) $post_id,
-        'title' => $fresh->post_title,
-        'status' => $fresh->post_status,
-        'link' => get_permalink($fresh),
-    ];
+        clean_post_cache($post_id);
+        $fresh = get_post($post_id);
+        if (!$fresh || $fresh->post_status !== 'publish') {
+            $errors[] = ['id' => $post_id, 'error' => 'status still ' . ($fresh->post_status ?? 'missing')];
+            continue;
+        }
+
+        $published[] = [
+            'id' => $post_id,
+            'title' => $fresh->post_title,
+            'status' => $fresh->post_status,
+            'link' => get_permalink($fresh),
+        ];
+    } catch (Throwable $e) {
+        $errors[] = ['id' => $post_id, 'error' => $e->getMessage()];
+    }
 }
 
 $counts = wp_count_posts('post');
@@ -82,12 +96,11 @@ $remaining_overdue = (int) $wpdb->get_var($wpdb->prepare(
     $now_gmt
 ));
 
-@unlink(__FILE__);
-echo json_encode([
+$report = [
     'ok' => true,
     'dry_run' => $dry_run,
     'now_gmt' => $now_gmt,
-    'published_count' => count($ublished),
+    'published_count' => count($published),
     'remaining_overdue' => $remaining_overdue,
     'post_counts' => [
         'published' => (int) ($counts->publish ?? 0),
@@ -95,5 +108,7 @@ echo json_encode([
     ],
     'published' => $published,
     'errors' => $errors,
-    'self_deleted' => true,
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+];
+
+@unlink(__FILE__);
+echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
