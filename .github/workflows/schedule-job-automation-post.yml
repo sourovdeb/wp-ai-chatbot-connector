@@ -1,0 +1,19 @@
+name: Schedule Job Automation Post
+
+on:
+  workflow_dispatch:
+
+jobs:
+  schedule-post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Schedule post for 25 Jun 2026 12:00 Réunion
+        run: python3 deploy/publish-job-automation-post.py | tee schedule-result.json
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: schedule-job-automation-result
+          path: schedule-result.json
