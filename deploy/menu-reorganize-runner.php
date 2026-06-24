@@ -199,29 +199,34 @@ function mr_remove_orphan_journal_children($menu_id, $journal_parent_item_id, $k
 }
 
 function mr_remove_journal_articles_everywhere($menu_id) {
-    $removed = [];
     $items = wp_get_nav_menu_items($menu_id);
     if (!$items) {
-        return $removed;
+        return [];
     }
+    $article_items = [];
     foreach ($items as $item) {
         if ($item->object !== 'page') {
             continue;
         }
-        $page_id = (int) $item->object_id;
-        if (!mr_is_journal_article_page($page_id)) {
+        if (!mr_is_journal_article_page((int) $item->object_id)) {
             continue;
         }
-        $removed = array_merge($removed, mr_remove_menu_item_and_descendants($menu_id, (int) $item->ID));
+        $article_items[(int) $item->ID] = $item;
     }
-    return array_map(function ($id) use ($items) {
-        foreach ($items as $item) {
-            if ((int) $item->ID === (int) $id) {
-                return ['id' => (int) $item->ID, 'title' => $item->title, 'object_id' => (int) $item->object_id];
-            }
+    $removed = [];
+    foreach ($article_items as $id => $item) {
+        $parent = (int) $item->menu_item_parent;
+        if ($parent && isset($article_items[$parent])) {
+            continue;
         }
-        return ['id' => (int) $id];
-    }, array_values(array_unique($removed)));
+        $removed[] = [
+            'id' => $id,
+            'title' => $item->title,
+            'object_id' => (int) $item->object_id,
+        ];
+        mr_remove_menu_item_and_descendants($menu_id, $id);
+    }
+    return $removed;
 }
 
 function mr_remove_duplicate_hub_items($menu_id, $journal_item_id, $keep_hub_menu_ids) {

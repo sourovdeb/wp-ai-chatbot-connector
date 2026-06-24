@@ -27,6 +27,7 @@ jobs:
           from pathlib import Path
 
           BASE = "https://www.sourovdeb.com"
+          SITE = "https://sourovdeb.com"
           KEY = "0767044896thevenet_"
           DEPLOY = f"{BASE}/deploy.php?key={KEY}"
           CTX = ssl.create_default_context()
@@ -63,7 +64,7 @@ jobs:
           assert upload.get("status") == "uploaded", upload
           time.sleep(1)
           q = urllib.parse.quote(KEY)
-          runner = f"{BASE}/menu-reorganize-runner.php?key={q}"
+          runner = f"{SITE}/menu-reorganize-runner.php?key={q}"
           inspect = get_url(f"{runner}&action=inspect")
           print("INSPECT:", json.dumps(inspect, indent=2))
           apply = get_url(f"{runner}&action=apply")
