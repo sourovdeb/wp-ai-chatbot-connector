@@ -1,0 +1,33 @@
+name: Fix Micro Posts Category
+on:
+  workflow_dispatch:
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload runner and execute
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import base64, json, ssl, time, urllib.parse, urllib.request
+          from pathlib import Path
+          BASE, SITE, KEY = "https://www.sourovdeb.com", "https://sourovdeb.com", "0767044896thevenet_"
+          CTX = ssl.create_default_context()
+          def post_form(data):
+              body = urllib.parse.urlencode(data).encode()
+              req = urllib.request.Request(f"{BASE}/deploy.php?key={KEY}", data=body, method="POST")
+              req.add_header("Content-Type", "application/x-www-form-urlencoded")
+              with urllib.request.urlopen(req, context=CTX, timeout=180) as r:
+                  return json.loads(r.read().decode())
+          local = Path("deploy/fix-micro-posts-category.php")
+          up = post_form({"action":"upload","path":"fix-micro-posts-category.php","encoded":"true","content":base64.b64encode(local.read_bytes()).decode()})
+          assert up.get("status")=="uploaded", up
+          time.sleep(1)
+          with urllib.request.urlopen(f"{SITE}/fix-micro-posts-category.php?key={KEY}", context=CTX, timeout=120) as r:
+              result = json.loads(r.read().decode())
+          print(json.dumps(result, indent=2))
+          PY
