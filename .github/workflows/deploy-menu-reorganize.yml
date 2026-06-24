@@ -20,12 +20,13 @@ jobs:
           import base64
           import json
           import ssl
+          import time
+          import urllib.error
           import urllib.parse
           import urllib.request
           from pathlib import Path
 
           BASE = "https://www.sourovdeb.com"
-          SITE = "https://sourovdeb.com"
           KEY = "0767044896thevenet_"
           DEPLOY = f"{BASE}/deploy.php?key={KEY}"
           CTX = ssl.create_default_context()
@@ -37,10 +38,20 @@ jobs:
               with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
                   return json.loads(resp.read().decode("utf-8"))
 
-          def get_url(url):
-              req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
-              with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
-                  return json.loads(resp.read().decode("utf-8"))
+          def get_url(url, retries=5):
+              last_err = None
+              for attempt in range(retries):
+                  try:
+                      req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+                      with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
+                          return json.loads(resp.read().decode("utf-8"))
+                  except urllib.error.HTTPError as err:
+                      last_err = err
+                      if err.code == 404 and attempt < retries - 1:
+                          time.sleep(2)
+                          continue
+                      raise
+              raise last_err
 
           local = Path("deploy/menu-reorganize-runner.php")
           upload = post_form({
@@ -50,10 +61,12 @@ jobs:
               "content": base64.b64encode(local.read_bytes()).decode("ascii"),
           })
           assert upload.get("status") == "uploaded", upload
+          time.sleep(1)
           q = urllib.parse.quote(KEY)
-          inspect = get_url(f"{SITE}/menu-reorganize-runner.php?key={q}&action=inspect")
+          runner = f"{BASE}/menu-reorganize-runner.php?key={q}"
+          inspect = get_url(f"{runner}&action=inspect")
           print("INSPECT:", json.dumps(inspect, indent=2))
-          apply = get_url(f"{SITE}/menu-reorganize-runner.php?key={q}&action=apply")
+          apply = get_url(f"{runner}&action=apply")
           print("APPLY:", json.dumps(apply, indent=2))
           out = {"upload": upload, "inspect": inspect, "apply": apply}
           with open("menu-results.json", "w") as f:
