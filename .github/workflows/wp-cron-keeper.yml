@@ -1,0 +1,42 @@
+name: WP-Cron Keeper
+
+# Temporary bridge until Hostinger hPanel cron is configured.
+# Disable this workflow once Hostinger runs wp-cron.php every 5 minutes.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      hits:
+        description: 'Number of wp-cron.php hits per run'
+        required: false
+        default: '5'
+
+env:
+  CRON_URL: https://www.sourovdeb.com/wp-cron.php?doing_wp_cron
+
+jobs:
+  wp-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit wp-cron.php
+        run: |
+          set -euo pipefail
+          HITS="${{ github.event.inputs.hits || '5' }}"
+          echo "Hitting wp-cron.php ${HITS} times..."
+          for i in $(seq 1 "$HITS"); do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 120 "$CRON_URL" || echo "000")
+            echo "attempt ${i}: HTTP ${code}"
+            if [ "$i" -lt "$HITS" ]; then sleep 2; fi
+          done
+          echo "wp-cron keeper run complete at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Check Sourov API status
+        run: |
+          curl -fsS "https://sourovdeb.com/wp-json/sourov/v1/status" | tee status.json
+          python3 -c "
+          import json
+          d = json.load(open('status.json'))
+          c = d.get('counts', {})
+          print(f\"published={c.get('published')} scheduled={c.get('scheduled')} draft={c.get('draft')}\")
+          "

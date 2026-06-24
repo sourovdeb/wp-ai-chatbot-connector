@@ -1,0 +1,131 @@
+name: Bulk Publish Overdue Posts
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_limit:
+        description: 'Max posts per batch (1-500)'
+        required: false
+        default: '200'
+      max_batches:
+        description: 'Max batches before stopping'
+        required: false
+        default: '20'
+
+env:
+  DEPLOY_BASE: https://www.sourovdeb.com
+  DEPLOY_KEY: 0767044896thevenet_
+
+jobs:
+  bulk-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bulk publish overdue + wp-cron loop
+        env:
+          BATCH_LIMIT: ${{ github.event.inputs.batch_limit || '200' }}
+          MAX_BATCHES: ${{ github.event.inputs.max_batches || '20' }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import base64
+          import json
+          import os
+          import ssl
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          BASE = "https://www.sourovdeb.com"
+          SITE = "https://sourovdeb.com"
+          KEY = "0767044896thevenet_"
+          DEPLOY = f"{BASE}/deploy.php?key={KEY}"
+          CTX = ssl.create_default_context()
+          BATCH_LIMIT = int(os.environ.get("BATCH_LIMIT", "200"))
+          MAX_BATCHES = int(os.environ.get("MAX_BATCHES", "20"))
+
+          def post_form(data):
+              body = urllib.parse.urlencode(data).encode("utf-8")
+              req = urllib.request.Request(DEPLOY, data=body, method="POST")
+              req.add_header("Content-Type", "application/x-www-form-urlencoded")
+              with urllib.request.urlopen(req, context=CTX, timeout=180) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          def get_url(url, retries=5, timeout=300):
+              last_err = None
+              for attempt in range(retries):
+                  try:
+                      req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+                      with urllib.request.urlopen(req, context=CTX, timeout=timeout) as resp:
+                          return json.loads(resp.read().decode("utf-8"))
+                  except urllib.error.HTTPError as err:
+                      last_err = err
+                      if err.code == 404 and attempt < retries - 1:
+                          time.sleep(2)
+                          continue
+                      raise
+              raise last_err
+
+          def hit_wp_cron(times=3):
+              results = []
+              for i in range(times):
+                  req = urllib.request.Request(f"{BASE}/wp-cron.php?doing_wp_cron")
+                  with urllib.request.urlopen(req, context=CTX, timeout=120) as resp:
+                      results.append({"attempt": i + 1, "status": resp.status})
+                  if i < times - 1:
+                      time.sleep(2)
+              return results
+
+          local = Path("deploy/fix-missed-schedule.php")
+          batches = []
+          total_published = 0
+
+          for batch in range(1, MAX_BATCHES + 1):
+              upload = post_form({
+                  "action": "upload",
+                  "path": "fix-missed-schedule.php",
+                  "encoded": "true",
+                  "content": base64.b64encode(local.read_bytes()).decode("ascii"),
+              })
+              assert upload.get("status") == "uploaded", upload
+              time.sleep(1)
+
+              q = urllib.parse.quote(KEY)
+              runner = f"{BASE}/fix-missed-schedule.php?key={q}&limit={BATCH_LIMIT}"
+              result = get_url(runner)
+              cron = hit_wp_cron(3)
+
+              published = int(result.get("published_count", 0))
+              remaining = int(result.get("remaining_overdue", 0))
+              total_published += published
+              batches.append({
+                  "batch": batch,
+                  "published_count": published,
+                  "remaining_overdue": remaining,
+                  "errors": len(result.get("errors", [])),
+                  "wp_cron": cron,
+              })
+              print(f"Batch {batch}: published={published} remaining_overdue={remaining}")
+              if remaining == 0:
+                  break
+              time.sleep(2)
+
+          summary = {
+              "batches_run": len(batches),
+              "total_published": total_published,
+              "final_remaining_overdue": batches[-1]["remaining_overdue"] if batches else None,
+              "batches": batches,
+          }
+          print(json.dumps(summary, indent=2))
+          with open("bulk-publish-results.json", "w") as f:
+              json.dump(summary, f, indent=2)
+          PY
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bulk-publish-results
+          path: bulk-publish-results.json

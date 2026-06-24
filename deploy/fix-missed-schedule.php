@@ -1,7 +1,7 @@
 <?php
 /**
  * Publish overdue scheduled (future) posts whose post_date has passed.
- * One-shot: upload to WP root, hit once, self-deletes.
+ * Upload to WP root via deploy.php, hit once, self-deletes.
  */
 require_once dirname(__FILE__) . '/wp-load.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -45,19 +45,34 @@ foreach ($overdue_ids as $post_id) {
         ];
         continue;
     }
-    $result = wp_publish_post((int) $post_id);
-    if ($result) {
+
+    // wp_publish_post() returns void — verify by post_status after
+    wp_publish_post((int) $post_id);
+    clean_post_cache((int) $post_id);
+    $fresh = get_post((int) $post_id);
+
+    if (!$fresh || $fresh->post_status !== 'publish') {
+        $updated = wp_update_post([
+            'ID' => (int) $post_id,
+            'post_status' => 'publish',
+        ], true);
         clean_post_cache((int) $post_id);
         $fresh = get_post((int) $post_id);
-        $published[] = [
-            'id' => (int) $post_id,
-            'title' => $fresh->post_title,
-            'status' => $fresh->post_status,
-            'link' => get_permalink($fresh),
-        ];
-    } else {
-        $errors[] = ['id' => (int) $post_id, 'error' => 'wp_publish_post failed'];
+        if (is_wp_error($updated) || !$fresh || $fresh->post_status !== 'publish') {
+            $errors[] = [
+                'id' => (int) $post_id,
+                'error' => is_wp_error($updated) ? $updated->get_error_message() : 'still not publish after update',
+            ];
+            continue;
+        }
     }
+
+    $published[] = [
+        'id' => (int) $post_id,
+        'title' => $fresh->post_title,
+        'status' => $fresh->post_status,
+        'link' => get_permalink($fresh),
+    ];
 }
 
 $counts = wp_count_posts('post');
@@ -72,7 +87,7 @@ echo json_encode([
     'ok' => true,
     'dry_run' => $dry_run,
     'now_gmt' => $now_gmt,
-    'published_count' => count($published),
+    'published_count' => count($ublished),
     'remaining_overdue' => $remaining_overdue,
     'post_counts' => [
         'published' => (int) ($counts->publish ?? 0),
