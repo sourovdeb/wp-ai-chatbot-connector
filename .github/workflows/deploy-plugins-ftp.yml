@@ -1,0 +1,63 @@
+name: Deploy plugins to Hostinger (FTPS)
+
+# Deploys the plugin folders to sourovdeb.com over FTPS.
+#
+# Credentials come ONLY from GitHub Actions Secrets — never commit them:
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+#     FTP_SERVER    e.g. ftp.sourovdeb.com
+#     FTP_USERNAME  the FTP user (rotate the one that leaked first)
+#     FTP_PASSWORD  the FTP password (rotate it first)
+#
+# Runs automatically when a plugin changes on main, or manually via the
+# "Run workflow" button. FTPS (protocol: ftps) encrypts the transfer; plain FTP
+# would send the password in cleartext.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sourov-ai-controller/**'
+      - 'sourov-ai-chatbot/**'
+      - '.github/workflows/deploy-plugins-ftp.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ftp-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy sourov-ai-controller
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./sourov-ai-controller/
+          server-dir: /public_html/wp-content/plugins/sourov-ai-controller/
+          # Only upload changed files; do not delete unrelated remote files.
+          dangerous-clean-slate: false
+
+      - name: Deploy sourov-ai-chatbot
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./sourov-ai-chatbot/
+          server-dir: /public_html/wp-content/plugins/sourov-ai-chatbot/
+          dangerous-clean-slate: false
+
+      - name: Post-deploy note
+        run: |
+          echo "Plugins uploaded. Activate them once in wp-admin -> Plugins if new."
+          echo "Verify: https://www.sourovdeb.com/wp-json/sourov/v1/status"
