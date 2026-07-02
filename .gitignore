@@ -1,0 +1,15 @@
+# Never commit secrets or local env
+.env
+.env.*
+*.secret
+secrets.*
+wp-config.php
+*.pem
+*.key
+id_rsa*
+
+# Local/build junk
+node_modules/
+vendor/
+*.log
+.DS_Store
