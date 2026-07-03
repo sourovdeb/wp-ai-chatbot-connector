@@ -1,34 +1,60 @@
-# WP AI Chatbot Connector (Ollama / Grok / OpenRouter) v0.2
+# WP AI Chatbot Connector — v0.6
 
-**Multi-turn • Floating toggle widget • Save/Schedule posts from chat • Ties to your publishing pipeline**
+A WordPress plugin for sourovdeb.com that adds an AI chat/assistant widget and a
+publishing assistant, wired to multiple AI providers behind one interface.
 
-- **Floating widget + toggle**: 💬 button always visible (bottom-right). Opens multi-turn chat window. Auto via settings (or shortcode `[ai_chatbot]` for embedded).
-- **Multi-turn history**: Full context sent each turn for coherent conversation.
-- **Post/Schedule from chat** (enable in settings): After every AI reply, buttons appear — "Save as Draft" or "Schedule +24h". Creates WP post (draft or future). Perfect tie-in to your fixer/publishing scripts, Google Sheets, Logseq, GitHub automation, ELT content flow.
-- **Providers** (Settings): Any OpenAI-compatible.
-  - Local Ollama: Expose securely (ngrok/Cloudflare) → `http://IP:11434/v1`.
-  - OpenRouter / xAI Grok: Their base URL + key (Grok models supported via OpenRouter).
-- **Settings** (WP Admin > Settings > AI Chatbot): Endpoint, key, model, system prompt, floating on/off, schedule/post enable.
-- **Security & caps**: Key server-side only. create_post requires `edit_posts`. Nonce protected.
-- **Upload to your WP Admin (or auto-push)**: 
-  1. GitHub repo → green "Code" button → Download ZIP.
-  2. WP Admin → Plugins → Add New → Upload Plugin → select the zip → Install & Activate.
-  3. (Alternative) Unzip to `wp-content/plugins/wp-ai-chatbot-connector` via FTP/cPanel.
-- Future updates: Re-download zip or git pull if cloned to server then modify and push to wordpress. .
-- **Defaults on activate**: OpenRouter free tier, floating widget on, schedule off (toggle on in settings).
-- **Pipeline integration (from your PDF)**: Generate content in chat → one-click draft/schedule → your remote publishing scripts (fixer, Python GUI, GitHub) handle SEO, tags, publish. Or extend further for direct REST triggers.
+## Two widgets
 
-**Limits (v0.2)**: No streaming, basic post parsing. For prod: Add login gate or rate limiting. Local Ollama needs public tunnel + firewall.
+- **Visitor search** (green 🔍, public): searches posts, pages, and categories. No
+  external AI call, no login.
+- **Admin AI** (blue 💬, logged-in editors): full assistant — draft, schedule, and
+  ask about the site. Available on the front end and inside wp-admin.
 
-Created/extended via Grok for Sourov Deb (Saint-Denis/Pierrefonds context). Matches community patterns (ai-provider-for-ollama etc.).
+Capabilities are gated: post creation requires `edit_posts`; AJAX handlers are
+nonce-protected; API keys stay server-side.
 
-## Quick Start
-1. Download zip from repo → upload/activate in WP. or use credentials ro upload from distance.
-2. Settings > AI Chatbot → configure provider (test OpenRouter free first).
-3. Enable floating + schedule options.
-4. 💬 button appears everywhere. Chat multi-turn. Use post buttons to feed pipeline.
-5. Add shortcode to specific pages if preferred.
+## Providers
 
-Repo: https://github.com/sourovdeb/wp-ai-chatbot-connector (updated & pushed).
+Set in **Settings → AI Chatbot → Provider**:
 
-**
+| Provider | How it's called | Key field |
+| --- | --- | --- |
+| OpenRouter (+ free-model fallback chain → Gemini) | OpenAI-compatible | API Key |
+| xAI Grok | OpenAI-compatible | API Key |
+| **Anthropic (Claude)** | native Messages API | Anthropic API key |
+| **OpenClaw** | OpenAI-compatible | API Key |
+| Shared Ollama (AI Engine) | native Ollama | — |
+| Custom (any OpenAI-compatible host) | OpenAI-compatible | API Key |
+
+Claude uses current model ids — `claude-sonnet-5` (default), `claude-opus-4-8`,
+`claude-fable-5`, `claude-haiku-4-5`. Enter the model in the **Primary model**
+field and the key in **Anthropic (Claude) API key**.
+
+## Install / update
+
+1. In WordPress: **Plugins → Add New → Upload Plugin**, choose a ZIP of this repo,
+   Install & Activate. Or clone/deploy to
+   `wp-content/plugins/wp-ai-chatbot-connector/`.
+2. **Settings → AI Chatbot** → pick a provider, paste its key, save.
+3. Use **Run test ping** to confirm the connection.
+
+For automated deploys (no manual upload), use the SSH + WP-CLI / Hostinger Git
+flow in **`AGENTS.md` §3** — not an HTTP file-upload endpoint.
+
+## Remote content management
+
+Programmatic create / edit / schedule / delete of posts and pages is handled by
+the WordPress core REST API (`/wp-json/wp/v2/*`) with per-user Application
+Passwords, and by the `Sourov AI Controller` plugin's `sourov/v1` convenience
+routes (SEO mapping, batch scheduling). See **`AGENTS.md`** for the full agent
+playbook and **`SECURITY.md`** for the credential-hygiene rules.
+
+## Security
+
+- No API key is ever committed — keys live in WordPress options (ideally seeded
+  from `wp-config.php` constants / server env). If a secret appears in a diff,
+  rotate it. See `SECURITY.md`.
+- Auth keys go in headers, never query strings.
+- No HTTP endpoint writes arbitrary files or evaluates arbitrary code.
+
+Repo: https://github.com/sourovdeb/wp-ai-chatbot-connector

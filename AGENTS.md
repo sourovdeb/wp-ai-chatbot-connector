@@ -127,11 +127,28 @@ it is not an auth secret. Do not confuse it with the REST/deploy/API secrets.
 ---
 
 ## 5. Adding AI providers (Grok / OpenRouter / OpenClaw / Claude)
-The chatbot connector can call multiple providers behind one interface. Each
-provider's API key is read via `getenv()` from `wp-config.php` constants or server
-env — never committed. For Anthropic (Claude), use the latest model ids
-(e.g. `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5`) and the standard
-Messages API. Keep provider selection and keys in options/env, code in the repo.
+The chatbot connector (`ai-chatbot-connector.php`, v0.6+) calls multiple providers
+behind one interface, selected in **Settings → AI Chatbot → Provider**:
+
+| Provider | Transport | Key setting |
+| --- | --- | --- |
+| OpenRouter | OpenAI-compatible `/chat/completions` | `ai_chatbot_api_key` |
+| xAI Grok | OpenAI-compatible `/chat/completions` | `ai_chatbot_api_key` |
+| OpenClaw | OpenAI-compatible `/chat/completions` | `ai_chatbot_api_key` |
+| Anthropic (Claude) | **native Messages API** (`POST /v1/messages`) | `ai_chatbot_anthropic_api_key` |
+| Shared Ollama / Custom | OpenAI-compatible | provider-specific |
+
+- **Anthropic** uses the native Messages API, not an OpenAI shim: headers
+  `x-api-key`, `anthropic-version: 2023-06-01`, `content-type: application/json`;
+  body carries `model`, `max_tokens`, top-level `system`, and a `messages` array
+  that must start with a `user` turn. Read the reply from `content[]` text blocks
+  and check `stop_reason` (`refusal`) before using it. Use current model ids —
+  `claude-sonnet-5` (default), `claude-opus-4-8`, `claude-fable-5`,
+  `claude-haiku-4-5`.
+- Keys are stored as WordPress options via the settings screen (or, preferably,
+  seeded from `wp-config.php` constants / server env and referenced there). **Never
+  commit a provider key to the repo.** If one appears in a diff, rotate it.
+- Provider selection and code live in the repo; secrets do not.
 
 ---
 

@@ -2,17 +2,20 @@
 /**
  * Plugin Name: AI Chatbot Connector (Ollama / Grok / OpenRouter)
  * Plugin URI: https://github.com/sourovdeb/wp-ai-chatbot-connector
- * Description: v0.5 - Dual mode widgets + OpenRouter fallback chain + Google Gemini final fallback + site-aware admin AI.
- * Version: 0.5.0
- * Author: Sourov Deb (via Grok)
+ * Description: v0.6 - Dual mode widgets + multi-provider AI (OpenRouter, xAI Grok, Anthropic Claude, OpenClaw, Ollama) + Google Gemini fallback + site-aware admin AI.
+ * Version: 0.6.0
+ * Author: Sourov Deb
  * License: GPL v2 or later
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('AI_CHATBOT_VERSION', '0.5.0');
+define('AI_CHATBOT_VERSION', '0.6.0');
 define('AI_CHATBOT_OPENROUTER_ENDPOINT', 'https://openrouter.ai/api/v1');
 define('AI_CHATBOT_GOOGLE_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta');
+define('AI_CHATBOT_ANTHROPIC_ENDPOINT', 'https://api.anthropic.com/v1');
+define('AI_CHATBOT_ANTHROPIC_VERSION', '2023-06-01');
+define('AI_CHATBOT_OPENCLAW_ENDPOINT', 'https://api.openclaw.ai/v1');
 
 /* ── Capabilities ─────────────────────────────────────────────────────── */
 
@@ -44,6 +47,7 @@ function ai_chatbot_register_settings() {
         'type' => 'string',
         'default' => 'gemini-2.0-flash-lite',
     ]);
+    register_setting('ai_chatbot_settings', 'ai_chatbot_anthropic_api_key');
     register_setting('ai_chatbot_settings', 'ai_chatbot_enable_fallbacks', [
         'type' => 'string',
         'default' => 'yes',
@@ -51,7 +55,7 @@ function ai_chatbot_register_settings() {
 }
 
 function ai_chatbot_sanitize_provider($value) {
-    $allowed = ['shared_ollama', 'openrouter', 'xai', 'custom'];
+    $allowed = ['shared_ollama', 'openrouter', 'xai', 'anthropic', 'openclaw', 'custom'];
     return in_array($value, $allowed, true) ? $value : 'openrouter';
 }
 
@@ -98,14 +102,28 @@ function ai_chatbot_resolve_config() {
     $defaults = [
         'openrouter' => ['endpoint' => 'https://openrouter.ai/api/v1', 'model' => 'meta-llama/llama-3.2-3b-instruct:free'],
         'xai' => ['endpoint' => 'https://api.x.ai/v1', 'model' => 'grok-2-latest'],
+        'anthropic' => ['endpoint' => AI_CHATBOT_ANTHROPIC_ENDPOINT, 'model' => 'claude-sonnet-5'],
+        'openclaw' => ['endpoint' => AI_CHATBOT_OPENCLAW_ENDPOINT, 'model' => 'openclaw-default'],
         'custom' => ['endpoint' => '', 'model' => 'llama3.2'],
     ];
     $d = $defaults[$provider] ?? $defaults['custom'];
 
+    // Anthropic uses its own key option and a native (non-OpenAI-compatible) API.
+    $api_key = $provider === 'anthropic'
+        ? get_option('ai_chatbot_anthropic_api_key', '')
+        : get_option('ai_chatbot_api_key', '');
+
+    // The shared endpoint field is designed for OpenAI-compatible hosts (openrouter/
+    // xai/custom). Pin anthropic/openclaw to their own base URLs so a leftover value
+    // in that field can't misroute them.
+    $endpoint = in_array($provider, ['anthropic', 'openclaw'], true)
+        ? $d['endpoint']
+        : get_option('ai_chatbot_endpoint', $d['endpoint']);
+
     return [
         'provider' => $provider,
-        'endpoint' => get_option('ai_chatbot_endpoint', $d['endpoint']),
-        'api_key' => get_option('ai_chatbot_api_key', ''),
+        'endpoint' => $endpoint,
+        'api_key' => $api_key,
         'model' => get_option('ai_chatbot_model', $d['model']),
         'temperature' => floatval(get_option('ai_chatbot_temperature', 0.7)),
         'timeout' => intval(get_option('ai_chatbot_timeout', 60)),
@@ -272,6 +290,76 @@ function ai_chatbot_call_google_gemini($messages, $max_tokens, $temperature = 0.
         : ['ok' => true, 'reply' => $reply];
 }
 
+function ai_chatbot_messages_to_anthropic($messages) {
+    // Anthropic's Messages API takes the system prompt as a top-level string and a
+    // messages array of user/assistant turns that must start with a user turn.
+    $system = '';
+    $turns = [];
+    foreach ($messages as $msg) {
+        $role = $msg['role'] ?? '';
+        $text = trim((string) ($msg['content'] ?? ''));
+        if ($text === '') {
+            continue;
+        }
+        if ($role === 'system') {
+            $system .= ($system === '' ? '' : "\n\n") . $text;
+            continue;
+        }
+        $turns[] = [
+            'role' => $role === 'assistant' ? 'assistant' : 'user',
+            'content' => $text,
+        ];
+    }
+    if (empty($turns) || $turns[0]['role'] !== 'user') {
+        array_unshift($turns, ['role' => 'user', 'content' => 'Hello']);
+    }
+    return ['system' => $system, 'messages' => $turns];
+}
+
+function ai_chatbot_call_anthropic($cfg, $messages, $max_tokens) {
+    $endpoint = rtrim($cfg['endpoint'] ?: AI_CHATBOT_ANTHROPIC_ENDPOINT, '/');
+    $url = $endpoint . '/messages';
+    if (empty($cfg['api_key'])) {
+        return ['ok' => false, 'error' => 'Anthropic API key not configured.'];
+    }
+    $converted = ai_chatbot_messages_to_anthropic($messages);
+    $payload = [
+        'model' => $cfg['model'] ?: 'claude-sonnet-5',
+        'max_tokens' => max(64, (int) $max_tokens),
+        'messages' => $converted['messages'],
+    ];
+    if ($converted['system'] !== '') {
+        $payload['system'] = $converted['system'];
+    }
+    $headers = [
+        'Content-Type: application/json',
+        'x-api-key: ' . $cfg['api_key'],
+        'anthropic-version: ' . AI_CHATBOT_ANTHROPIC_VERSION,
+    ];
+
+    $res = ai_chatbot_http_post_json($url, $payload, $headers, $cfg['timeout']);
+    if ($res['curl_err']) {
+        return ['ok' => false, 'error' => 'Anthropic connection failed: ' . $res['curl_err']];
+    }
+    if ($res['code'] !== 200) {
+        return ['ok' => false, 'error' => 'Anthropic HTTP ' . $res['code'] . ': ' . substr($res['body'], 0, 400)];
+    }
+    $data = json_decode($res['body'], true);
+    if (($data['stop_reason'] ?? '') === 'refusal') {
+        return ['ok' => false, 'error' => 'Anthropic declined the request (refusal).'];
+    }
+    $texts = [];
+    foreach (($data['content'] ?? []) as $block) {
+        if (($block['type'] ?? '') === 'text' && isset($block['text'])) {
+            $texts[] = $block['text'];
+        }
+    }
+    $reply = trim(implode("\n", $texts));
+    return $reply === ''
+        ? ['ok' => false, 'error' => 'Empty Anthropic response']
+        : ['ok' => true, 'reply' => $reply];
+}
+
 function ai_chatbot_site_audit_snapshot() {
     $counts = wp_count_posts('post');
     $published = (int) ($counts->publish ?? 0);
@@ -316,6 +404,23 @@ function ai_chatbot_call_api($messages, $max_tokens = 600) {
         }
         $content = is_array($result['parsed']) ? wp_json_encode($result['parsed']) : ($result['raw'] ?? 'OK');
         return ['ok' => true, 'reply' => $content, 'model_used' => 'ollama:' . ($cfg['model'] ?? 'default')];
+    }
+
+    if ($cfg['provider'] === 'anthropic') {
+        $result = ai_chatbot_call_anthropic($cfg, $messages, $max_tokens);
+        if ($result['ok']) {
+            $result['model_used'] = 'anthropic:' . $cfg['model'];
+            return $result;
+        }
+        if (ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')) {
+            $google = ai_chatbot_call_google_gemini($messages, $max_tokens, $cfg['temperature']);
+            if ($google['ok']) {
+                $google['model_used'] = 'google:' . get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite');
+                return $google;
+            }
+            $result['error'] .= ' | Google fallback: ' . $google['error'];
+        }
+        return $result;
     }
 
     if ($cfg['provider'] === 'openrouter' && ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')) {
@@ -649,6 +754,7 @@ function ai_chatbot_run_diagnostics() {
         'AI model (primary): ' . $cfg['model'],
         'Fallback chain: ' . (ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes') ? implode(', ', ai_chatbot_get_model_fallback_chain($cfg)) . ' → google:' . get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite') : 'OFF'),
         'Google key: ' . (get_option('ai_chatbot_google_api_key', '') ? 'set' : 'missing'),
+        'Anthropic key: ' . (get_option('ai_chatbot_anthropic_api_key', '') ? 'set' : 'missing'),
     ];
     if ($cfg['provider'] === 'shared_ollama') {
         $tunnel = $cfg['tunnel_url'];
@@ -706,6 +812,8 @@ function ai_chatbot_settings_page() {
                         <option value="openrouter" <?php selected($provider, 'openrouter'); ?>>OpenRouter</option>
                         <option value="shared_ollama" <?php selected($provider, 'shared_ollama'); ?> <?php disabled(!$has_shared); ?>>Shared Ollama (AI Engine)</option>
                         <option value="xai" <?php selected($provider, 'xai'); ?>>xAI Grok</option>
+                        <option value="anthropic" <?php selected($provider, 'anthropic'); ?>>Anthropic (Claude)</option>
+                        <option value="openclaw" <?php selected($provider, 'openclaw'); ?>>OpenClaw</option>
                         <option value="custom" <?php selected($provider, 'custom'); ?>>Custom</option>
                     </select>
                     <?php if ($has_shared): ?><p class="description"><a href="<?php echo esc_url(admin_url('admin.php?page=aicu-ai-engine-settings')); ?>">AI Engine → Ollama Settings</a></p><?php endif; ?>
@@ -716,6 +824,7 @@ function ai_chatbot_settings_page() {
                 <tr><th>Model fallbacks</th><td><label><input type="checkbox" name="ai_chatbot_enable_fallbacks" value="yes" <?php checked(ai_chatbot_opt_on('ai_chatbot_enable_fallbacks', 'yes')); ?> /> Try free OpenRouter models → <?php echo esc_html(ai_chatbot_openrouter_cheap_model()); ?> → Google Gemini</label></td></tr>
                 <tr><th>Google API key</th><td><input type="password" name="ai_chatbot_google_api_key" value="<?php echo esc_attr(get_option('ai_chatbot_google_api_key', '')); ?>" class="regular-text" autocomplete="new-password" /><p class="description">Final fallback (Gemini Flash Lite).</p></td></tr>
                 <tr><th>Google model</th><td><input type="text" name="ai_chatbot_google_model" value="<?php echo esc_attr(get_option('ai_chatbot_google_model', 'gemini-2.0-flash-lite')); ?>" class="regular-text" /></td></tr>
+                <tr><th>Anthropic (Claude) API key</th><td><input type="password" name="ai_chatbot_anthropic_api_key" value="<?php echo esc_attr(get_option('ai_chatbot_anthropic_api_key', '')); ?>" class="regular-text" autocomplete="new-password" /><p class="description">Used when Provider = Anthropic. Set the model in "Primary model" above (e.g. <code>claude-sonnet-5</code>, <code>claude-opus-4-8</code>, <code>claude-fable-5</code>, <code>claude-haiku-4-5</code>).</p></td></tr>
                 <tr><th>Ignore CF Access</th><td><label><input type="checkbox" name="ai_chatbot_ignore_cf_access" value="yes" <?php checked(ai_chatbot_opt_on('ai_chatbot_ignore_cf_access', 'no')); ?> /> Skip Cloudflare Access headers for Ollama</label></td></tr>
                 <tr><th>System prompt</th><td><textarea name="ai_chatbot_system_prompt" rows="3" class="large-text"><?php echo esc_textarea(get_option('ai_chatbot_system_prompt', 'You are Sourov\'s WordPress publishing assistant.')); ?></textarea></td></tr>
                 <tr><th>Post/Schedule buttons</th><td><label><input type="checkbox" name="ai_chatbot_schedule_enabled" value="yes" <?php checked(ai_chatbot_opt_on('ai_chatbot_schedule_enabled', 'no')); ?> /> Show draft/schedule after admin AI replies</label></td></tr>
@@ -727,7 +836,7 @@ function ai_chatbot_settings_page() {
         <p><a class="button button-primary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=ai_chatbot_test_connection'), 'ai_chatbot_test')); ?>">Run test ping</a></p>
         <h3>Status</h3><ul><?php foreach ($diag['info'] as $line): ?><li><code><?php echo esc_html($line); ?></code></li><?php endforeach; ?></ul>
     </div>
-    <script>(function(){var s=document.getElementById('ai_chatbot_provider'),r=document.querySelectorAll('.ai-chatbot-custom-fields');function t(){var show=s&&['custom','openrouter','xai'].indexOf(s.value)>=0;r.forEach(function(e){e.style.display=show?'':'none';});}if(s){s.onchange=t;t();}})();</script>
+    <script>(function(){var s=document.getElementById('ai_chatbot_provider'),r=document.querySelectorAll('.ai-chatbot-custom-fields');function t(){var show=s&&['custom','openrouter','xai','anthropic','openclaw'].indexOf(s.value)>=0;r.forEach(function(e){e.style.display=show?'':'none';});}if(s){s.onchange=t;t();}})();</script>
     <?php
 }
 
