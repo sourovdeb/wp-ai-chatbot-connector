@@ -5,7 +5,7 @@
  */
 header('Content-Type: application/json');
 
-$SECRET = '0767044896thevenet_';
+$SECRET = getenv('SOUROV_DEPLOY_KEY');
 if (($_GET['key'] ?? '') !== $SECRET) {
     http_response_code(403);
     exit(json_encode(['error' => 'forbidden']));

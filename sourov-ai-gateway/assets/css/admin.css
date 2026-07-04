@@ -1,0 +1,7 @@
+/* Sourov AI Gateway — admin styles */
+.sourov-ai-gateway-wrap { max-width: 760px; }
+.sourov-ai-gateway-wrap h1 { display: flex; align-items: center; gap: .5rem; }
+.sourov-ai-provider { border: 1px solid #dcdcde; border-radius: 6px; padding: 12px 16px; margin: 10px 0; }
+.sourov-ai-provider.configured { border-left: 4px solid #46b450; }
+.sourov-ai-provider.unconfigured { border-left: 4px solid #dc3232; }
+.sourov-ai-badge { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }

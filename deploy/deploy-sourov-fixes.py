@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """Deploy sourov-ai-controller v1.2 + automation status fix to sourovdeb.com"""
 import base64
 import json
@@ -10,7 +11,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 BASE = "https://www.sourovdeb.com"
-KEY = "0767044896thevenet_"
+KEY = os.environ.get("SOUROV_DEPLOY_KEY", "")
 DEPLOY = f"{BASE}/deploy.php?key={KEY}"
 CTX = ssl.create_default_context()
 

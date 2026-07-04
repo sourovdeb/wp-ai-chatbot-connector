@@ -1,11 +1,11 @@
 <?php
 /**
  * One-time plugin manager runner — downloads plugin from GitHub, swaps AI plugins, self-deletes.
- * Hit: https://www.sourovdeb.com/plugin-manager-runner.php?key=0767044896thevenet_
+ * Hit: https://www.sourovdeb.com/plugin-manager-runner.php?key=SOUROV_DEPLOY_KEY_ROTATED_SEE_SECURITY_MD
  */
 header('Content-Type: application/json');
 
-$SECRET = '0767044896thevenet_';
+$SECRET = getenv('SOUROV_DEPLOY_KEY');
 if (($_GET['key'] ?? '') !== $SECRET) {
     http_response_code(403);
     exit(json_encode(['error' => 'forbidden']));

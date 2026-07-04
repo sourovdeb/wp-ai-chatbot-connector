@@ -133,6 +133,14 @@ env — never committed. For Anthropic (Claude), use the latest model ids
 (e.g. `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5`) and the standard
 Messages API. Keep provider selection and keys in options/env, code in the repo.
 
+The `sourov-ai-gateway/` plugin in this repo is the reference implementation:
+Mistral, xAI/Grok, OpenRouter, OpenClaw, and Anthropic (Claude) behind one
+`sourov-ai/v1` REST namespace, header-authenticated, rate-limited, with **no**
+node/code-execution layer. See `sourov-ai-gateway/README.md`. It deliberately
+omits the "Node.js execution layer" from the original sketch because an HTTP
+endpoint that runs arbitrary node/code is the same RCE backdoor class as the old
+`deploy.php` — deploy code via SSH + WP-CLI (§3) instead.
+
 ---
 
 ## 6. Hard rules for the agent

@@ -20,7 +20,7 @@ try {
 header('Content-Type: application/json; charset=utf-8');
 
 $key = $_GET['key'] ?? '';
-$secret = get_option('sourov_ai_secret_key', '0767044896thevenet_');
+$secret = get_option('sourov_ai_secret_key', getenv('SOUROV_DEPLOY_KEY'));
 if (!$secret || !hash_equals((string) $secret, (string) $key)) {
     http_response_code(403);
     echo json_encode(['error' => 'forbidden']);

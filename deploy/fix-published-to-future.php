@@ -7,7 +7,7 @@ require_once dirname(__FILE__) . '/wp-load.php';
 header('Content-Type: application/json');
 
 $key = $_GET['key'] ?? '';
-$secret = get_option('sourov_ai_secret_key', '0767044896thevenet_');
+$secret = get_option('sourov_ai_secret_key', getenv('SOUROV_DEPLOY_KEY'));
 if ($key !== $secret) {
     http_response_code(403);
     echo json_encode(['error' => 'forbidden']);

@@ -6,7 +6,7 @@ the steps below are done.**
 ## What is wrong
 
 1. **This repository is PUBLIC** (`github.com/sourovdeb/wp-ai-chatbot-connector`).
-2. The master key `0767044896thevenet_` is committed in **plaintext in ~34 files**,
+2. The master key (a ~19-char static string, now redacted from the tree) was committed in **plaintext in ~34 files**,
    including `.github/workflows/*.yml` and the `deploy/*.php` / `deploy/*.py`
    runners.
 3. That same key authorizes `deploy.php`, whose actions include

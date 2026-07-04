@@ -5,7 +5,7 @@ on:
 
 env:
   DEPLOY_BASE: https://www.sourovdeb.com
-  DEPLOY_KEY: 0767044896thevenet_
+  DEPLOY_KEY: ${{ secrets.SOUROV_DEPLOY_KEY }}
 
 jobs:
   deploy-and-verify:
@@ -25,7 +25,7 @@ jobs:
           from pathlib import Path
 
           BASE = "https://www.sourovdeb.com"
-          KEY = "0767044896thevenet_"
+          KEY = "${{ secrets.SOUROV_DEPLOY_KEY }}"
           DEPLOY = f"{BASE}/deploy.php?key={KEY}"
           CTX = ssl.create_default_context()
 
