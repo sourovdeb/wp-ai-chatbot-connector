@@ -9,7 +9,7 @@ require_once dirname(__FILE__) . '/wp-load.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-$secret = get_option('sourov_ai_secret_key', '0767044896thevenet_');
+$secret = get_option('sourov_ai_secret_key', 'REDACTED_ROTATE_AND_USE_ENV');
 $key = $_GET['key'] ?? $_POST['key'] ?? '';
 if (!$secret || !hash_equals((string) $secret, (string) $key)) {
     http_response_code(403);

@@ -1,11 +1,11 @@
 <?php
 /**
  * One-time plugin manager runner — downloads plugin from GitHub, swaps AI plugins, self-deletes.
- * Hit: https://www.sourovdeb.com/plugin-manager-runner.php?key=0767044896thevenet_
+ * Hit: https://www.sourovdeb.com/plugin-manager-runner.php?key=REDACTED_ROTATE_AND_USE_ENV
  */
 header('Content-Type: application/json');
 
-$SECRET = '0767044896thevenet_';
+$SECRET = 'REDACTED_ROTATE_AND_USE_ENV';
 if (($_GET['key'] ?? '') !== $SECRET) {
     http_response_code(403);
     exit(json_encode(['error' => 'forbidden']));

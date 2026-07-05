@@ -133,6 +133,14 @@ env — never committed. For Anthropic (Claude), use the latest model ids
 (e.g. `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5`) and the standard
 Messages API. Keep provider selection and keys in options/env, code in the repo.
 
+The connector (`ai-chatbot-connector.php`) now ships an **`anthropic` provider**
+built on the Messages API (`POST https://api.anthropic.com/v1/messages`, headers
+`x-api-key` + `anthropic-version: 2023-06-01`, system prompt split out of the
+message list). Select "Anthropic Claude" in Settings → AI Chatbot, paste the API
+key, and set a model id like `claude-sonnet-5`. The key is stored in the
+`ai_chatbot_api_key` wp-option server-side; do not hardcode it. Google Gemini
+remains the final fallback when fallbacks are enabled.
+
 ---
 
 ## 6. Hard rules for the agent

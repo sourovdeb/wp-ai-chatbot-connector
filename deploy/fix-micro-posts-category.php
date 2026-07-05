@@ -1,6 +1,6 @@
 <?php
 header('Content-Type: application/json');
-if (($_GET['key'] ?? '') !== '0767044896thevenet_') {
+if (($_GET['key'] ?? '') !== 'REDACTED_ROTATE_AND_USE_ENV') {
     http_response_code(403);
     exit('{"error":"forbidden"}');
 }

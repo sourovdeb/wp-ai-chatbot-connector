@@ -6,9 +6,11 @@ the steps below are done.**
 ## What is wrong
 
 1. **This repository is PUBLIC** (`github.com/sourovdeb/wp-ai-chatbot-connector`).
-2. The master key `0767044896thevenet_` is committed in **plaintext in ~34 files**,
-   including `.github/workflows/*.yml` and the `deploy/*.php` / `deploy/*.py`
-   runners.
+2. The master key (value redacted here — **it must still be rotated**) was
+   committed in **plaintext in ~34 files**, including `.github/workflows/*.yml`
+   and the `deploy/*.php` / `deploy/*.py` runners. The literal has now been
+   scrubbed from the current working tree, but it **remains in git history** and
+   in any fork/clone/cache, so redacting the tree does **not** un-leak it.
 3. That same key authorizes `deploy.php`, whose actions include
    `upload`, `delete`, `deploy_zip`, `write_env`, and running arbitrary PHP /
    "self-deleting runners". A static key + arbitrary file write/execute over HTTP

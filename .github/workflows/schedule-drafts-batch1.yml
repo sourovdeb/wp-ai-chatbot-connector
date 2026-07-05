@@ -16,7 +16,7 @@ jobs:
           set -euo pipefail
           HTTP_CODE=$(curl -sS -o schedule-result.json -w "%{http_code}" -X POST "https://www.sourovdeb.com/wp-json/sourov/v1/schedule-drafts" \
             -H "Content-Type: application/json" \
-            -H "X-Sourov-Key: 0767044896thevenet_" \
+            -H "X-Sourov-Key: REDACTED_ROTATE_AND_USE_ENV" \
             -d '{"interval":60,"offset":0,"limit":50,"start_hours":1,"apply_category":true,"apply_sections":true,"apply_tags":true}')
           echo "HTTP_STATUS=$HTTP_CODE" | tee http-status.txt
           cat schedule-result.json

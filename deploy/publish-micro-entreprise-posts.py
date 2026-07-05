@@ -6,7 +6,7 @@ import urllib.request
 import urllib.error
 
 API_URL = "https://sourovdeb.com/wp-json/sourov/v1/ai-post"
-API_KEY = "0767044896thevenet_"
+API_KEY = "REDACTED_ROTATE_AND_USE_ENV"
 
 
 def md_to_html(md: str) -> str:
@@ -312,7 +312,7 @@ def set_slug(post_id: int, slug: str) -> dict:
     """Update post slug via deploy.php runner."""
     runner_php = f"""<?php
 header('Content-Type: application/json');
-if (($_GET['key'] ?? '') !== '0767044896thevenet_') {{ http_response_code(403); exit('{{"error":"forbidden"}}'); }}
+if (($_GET['key'] ?? '') !== 'REDACTED_ROTATE_AND_USE_ENV') {{ http_response_code(403); exit('{{"error":"forbidden"}}'); }}
 require_once('/home/u839078121/domains/sourovdeb.com/public_html/wp-load.php');
 $post_id = {post_id};
 $slug = '{slug}';

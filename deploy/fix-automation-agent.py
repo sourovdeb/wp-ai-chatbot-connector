@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 BASE = "https://www.sourovdeb.com"
-KEY = "0767044896thevenet_"
+KEY = "REDACTED_ROTATE_AND_USE_ENV"
 DEPLOY = f"{BASE}/deploy.php?key={KEY}"
 CTX = ssl.create_default_context()
 OUT = Path(__file__).resolve().parent / "sourov-automation-agent-fixed.php"

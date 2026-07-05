@@ -10,7 +10,7 @@ from pathlib import Path
 
 DEPLOY_BASE = "https://www.sourovdeb.com"
 SITE_BASE = "https://sourovdeb.com"
-KEY = "0767044896thevenet_"
+KEY = "REDACTED_ROTATE_AND_USE_ENV"
 DEPLOY = f"{DEPLOY_BASE}/deploy.php?key={KEY}"
 CTX = ssl.create_default_context()
 SCRIPT = Path(__file__).resolve().parent / "categorize-seo-job.php"
