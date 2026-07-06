@@ -1,10 +1,10 @@
 <?php
 /**
  * One-shot: activate Sourov AI Chatbot plugin. Self-deletes after run.
- * https://www.sourovdeb.com/activate-sourov-chatbot.php?key=0767044896thevenet_
+ * https://www.sourovdeb.com/activate-sourov-chatbot.php?key=<DEPLOY_KEY>
  */
 header('Content-Type: application/json');
-$SECRET = '0767044896thevenet_';
+$SECRET = getenv('DEPLOY_KEY');
 if (($_GET['key'] ?? '') !== $SECRET) {
     http_response_code(403);
     exit(json_encode(['error' => 'forbidden']));

@@ -5,7 +5,7 @@ on:
 
 env:
   DEPLOY_BASE: https://www.sourovdeb.com
-  DEPLOY_KEY: 0767044896thevenet_
+  DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
 
 jobs:
   deploy-and-import:
@@ -27,7 +27,8 @@ jobs:
 
           BASE = "https://www.sourovdeb.com"
           SITE = "https://sourovdeb.com"
-          KEY = "0767044896thevenet_"
+          import os
+          KEY = os.environ["DEPLOY_KEY"]
           DEPLOY = f"{BASE}/deploy.php?key={KEY}"
           CTX = ssl.create_default_context()
 

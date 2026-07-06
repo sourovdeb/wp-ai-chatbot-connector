@@ -3,10 +3,20 @@
 **Status: active exposure. Treat sourovdeb.com as potentially compromised until
 the steps below are done.**
 
+> **This PR (repo-side purge, done automatically):** every plaintext copy of the
+> deploy key has been removed from the *current* files — 49 occurrences across 36
+> files now read the key from `${{ secrets.DEPLOY_KEY }}` (workflows),
+> `getenv('DEPLOY_KEY')` (PHP), or `os.environ["DEPLOY_KEY"]` (Python) instead of a
+> literal. **This does NOT undo the leak.** The key is still in git history and in
+> any fork/clone/scanner cache, so it must be treated as compromised. The steps
+> below — rotation, taking `deploy.php` offline, adding the new key as a GitHub
+> Actions Secret named `DEPLOY_KEY`, and rewriting history — are yours to do and
+> cannot be automated from here.
+
 ## What is wrong
 
 1. **This repository is PUBLIC** (`github.com/sourovdeb/wp-ai-chatbot-connector`).
-2. The master key `0767044896thevenet_` is committed in **plaintext in ~34 files**,
+2. The master key `0767…thevenet_` (redacted; the live value is in git history) is committed in **plaintext in ~34 files**,
    including `.github/workflows/*.yml` and the `deploy/*.php` / `deploy/*.py`
    runners.
 3. That same key authorizes `deploy.php`, whose actions include
@@ -41,7 +51,13 @@ automated scanners.
    before the exposure window.
 4. **Move all secrets out of the repo** and into GitHub Actions Secrets
    (Settings → Secrets and variables → Actions) and `wp-config.php` constants /
-   server env. Update workflows and runners to read from those instead of literals.
+   server env. The code side of this is **done** — workflows/runners now read
+   `DEPLOY_KEY` from env/secrets. You must add the **rotated** value as a repo
+   secret named `DEPLOY_KEY` (Settings → Secrets and variables → Actions → New
+   repository secret) for the workflows to run again. The server-side PHP/Python
+   runners expect a `DEPLOY_KEY` environment variable — but per step 2 those
+   `deploy.php`-based runners should be retired in favour of SSH + WP-CLI
+   (AGENTS.md §3), not kept alive with an env var.
 5. **Consider making the repo private** if it does not need to be public. Note that
    making it private does **not** un-leak already-exposed secrets — rotation
    (step 1) is the real fix. History rewriting (BFG/`git filter-repo`) can remove

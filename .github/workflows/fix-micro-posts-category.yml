@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
 env:
   DEPLOY_BASE: https://www.sourovdeb.com
-  DEPLOY_KEY: 0767044896thevenet_
+  DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -15,7 +15,8 @@ jobs:
           python3 <<'PY'
           import base64, json, ssl, time, urllib.error, urllib.parse, urllib.request
           from pathlib import Path
-          BASE, KEY = "https://www.sourovdeb.com", "0767044896thevenet_"
+          import os
+          BASE, KEY = "https://www.sourovdeb.com", os.environ["DEPLOY_KEY"]
           CTX = ssl.create_default_context()
           def post_form(data):
               body = urllib.parse.urlencode(data).encode()

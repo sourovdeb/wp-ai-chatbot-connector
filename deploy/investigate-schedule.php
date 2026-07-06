@@ -5,7 +5,7 @@
  */
 header('Content-Type: application/json; charset=utf-8');
 
-if (($_GET['key'] ?? '') !== '0767044896thevenet_') {
+if (($_GET['key'] ?? '') !== getenv('DEPLOY_KEY')) {
     http_response_code(403);
     echo json_encode(['error' => 'forbidden']);
     exit;

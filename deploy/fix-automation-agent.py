@@ -9,7 +9,8 @@ import urllib.request
 from pathlib import Path
 
 BASE = "https://www.sourovdeb.com"
-KEY = "0767044896thevenet_"
+import os
+KEY = os.environ["DEPLOY_KEY"]
 DEPLOY = f"{BASE}/deploy.php?key={KEY}"
 CTX = ssl.create_default_context()
 OUT = Path(__file__).resolve().parent / "sourov-automation-agent-fixed.php"

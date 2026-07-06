@@ -39,6 +39,12 @@ AUTH='-u "$WP_APP_USER:$WP_APP_PASSWORD"'   # HTTP Basic, HTTPS only
 BASE='https://www.sourovdeb.com/wp-json/wp/v2'
 ```
 
+A ready-made, secrets-free wrapper for all of this lives at **`tools/wp.sh`** —
+it reads `WP_APP_USER` / `WP_APP_PASSWORD` from the environment and exposes
+`status | list | get | create | edit | trash | delete` for posts and pages
+(`tools/wp.sh help`). Prefer it (or the raw `curl` below) over any custom
+file-write endpoint.
+
 **Create a draft**
 ```bash
 curl -sS -u "$WP_APP_USER:$WP_APP_PASSWORD" -X POST "$BASE/posts" \
