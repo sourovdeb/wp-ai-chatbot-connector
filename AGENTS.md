@@ -195,3 +195,27 @@ Messages API. Keep provider selection and keys in options/env, code in the repo.
   self-delete** (`@unlink(__FILE__)` at the end) and must gate on the same
   `sourov_ai_secret_key`/`DEPLOY_KEY` check as everything else in this repo —
   never leave a bare, unauthenticated runner reachable after use.
+
+## 8. Lessons from the 2026-07-06 dashboard-diagnosis session (agent pacing, not just site bugs)
+
+A second same-day incident (see `INCIDENT-2026-07-06-DASHBOARD.md`) took far
+longer to diagnose than it should have — not because the bug was novel (it
+was the identical `custom_homepage_query` namespaced-hook fatal as the
+original outage), but because of avoidable pacing mistakes on the agent's
+side. Full retrospective in `RETRO-2026-07-06-DASHBOARD-DIAGNOSIS.md`; the
+actionable rules are encoded in `.claude/skills/wp-critical-error-triage/SKILL.md`
+and `GUARDRAILS.md`. In short:
+
+- **Get the exact fatal error text first.** It is always the fastest path
+  (WP's auto-email to the site admin, or the host's PHP error log) — don't
+  run other diagnostics as a substitute for asking for it plainly.
+- **Test a claimed tool limitation once, empirically** (e.g. attempt the FTP
+  connection and report what actually happens) instead of repeating a
+  verbal disclaimer across multiple turns.
+- **Rank hypotheses by probability, not by which tool happens to be
+  reachable.** A session with GitHub access but no server access will be
+  tempted to over-investigate "did our own commit break this" — check it
+  quickly, then move on if it's not the answer.
+- **Cache is not verification.** A cached page returning 200 proves nothing
+  about whether the underlying PHP is currently broken — this is also why
+  "front end is fine" never implies "wp-admin is fine."
