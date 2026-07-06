@@ -153,3 +153,45 @@ Messages API. Keep provider selection and keys in options/env, code in the repo.
   weakening security controls is what caused the incident in `SECURITY.md`.
 - Every destructive or site-wide change goes through a GitHub Actions run so it is
   logged and reviewable, not an ad-hoc local script.
+
+## 7. Lessons from the 2026-07-06 outage (see `INCIDENT-2026-07-06.md`)
+
+- **Namespaced theme/plugin code:** if a file declares `namespace X;`, never
+  register a hook with a bare string (`add_action('hook', 'my_function')`).
+  Use `__NAMESPACE__ . '\\my_function'`, an array `[__NAMESPACE__ . '\\Class', 'method']`,
+  or a closure. A bare string silently resolves to the *global* namespace and
+  WordPress will fatal with "call to undefined function" the moment that hook
+  fires — which may only be on some request types (front-end main query) and
+  not others (REST, login, admin-ajax), making the bug look intermittent.
+- **Never drop loose `.php` files directly into `wp-content/plugins/` or the
+  site root as scratch/fix/diagnostic scripts.** WordPress treats any loose
+  file with a plugin header as activatable, and once active it's easy to lose
+  track of which one-off file is actually live vs. an abandoned duplicate —
+  this is exactly what turned one bug into a half-day debugging session
+  today (a fixed file sat under `-d.php` while the stale original stayed in
+  `active_plugins`). Package fixes as a proper plugin folder, or better,
+  land them through this repo and deploy via SSH/WP-CLI (§3).
+- **Never leave a standalone fetch/crawl/exec utility script reachable in a
+  public web folder**, even "temporarily" and even if it happens to be inert
+  as currently coded (e.g. gated behind a CLI-only check). It has no
+  business being web-reachable at all; if it's needed, it belongs behind the
+  same auth as everything else in §2, or as a local/CI-only script, never
+  inside `wp-content/`.
+- **When a plugin's `active_plugins` entry doesn't match anything on disk,
+  don't just add the missing file back under a new name — check whether an
+  already-fixed version exists under a different filename first** (look for
+  `-d`, `-fixed`, `-v2`, etc. siblings) before writing a new fix from
+  scratch. Restore/rename the correct file to the filename WordPress already
+  expects; don't leave two copies of the same plugin on disk.
+- **A working REST/API response is not proof the underlying code is current** —
+  page/object caching (LiteSpeed here) can serve a stale response from before
+  a fix was deployed. Always bust cache (unique query param, or purge) before
+  trusting a "looks fine" response as confirmation of a live-code change.
+- **Prefer WordPress's own recovery functions over hand-written DB edits**
+  when reconciling state — e.g. `validate_active_plugins()` (in
+  `wp-admin/includes/plugin.php`) safely purges dead `active_plugins`
+  entries; don't hand-edit the option.
+- **Any one-shot diagnostic/cleanup PHP file uploaded to run once must
+  self-delete** (`@unlink(__FILE__)` at the end) and must gate on the same
+  `sourov_ai_secret_key`/`DEPLOY_KEY` check as everything else in this repo —
+  never leave a bare, unauthenticated runner reachable after use.
