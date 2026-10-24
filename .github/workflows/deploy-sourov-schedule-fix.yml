@@ -5,7 +5,7 @@ on:
 
 env:
   DEPLOY_BASE: https://www.sourovdeb.com
-  DEPLOY_KEY: 0767044896thevenet_
+  DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
 
 jobs:
   deploy-and-verify:

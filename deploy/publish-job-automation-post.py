@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Schedule job lead automation blog post for 2026-06-25 12:00 Réunion (08:00 UTC)."""
 import json
+import os
 import urllib.request
 
 API_URL = "https://sourovdeb.com/wp-json/sourov/v1/ai-post"
-API_KEY = "0767044896thevenet_"
+API_KEY = os.environ.get("DEPLOY_KEY", "")
+if not API_KEY:
+    raise SystemExit("DEPLOY_KEY environment variable is not set; refusing to run.")
 
 CONTENT = """
 <p><strong>Published: 25 June 2026</strong> · By Sourov Deb</p>
@@ -82,7 +85,7 @@ if result.get("success") and result.get("post_id"):
     slug = "building-job-lead-automation-system-france-travail"
     php = f"""<?php
 header('Content-Type: application/json');
-if (($_GET['key'] ?? '') !== '0767044896thevenet_') {{ http_response_code(403); exit('{{"error":"forbidden"}}'); }}
+if (($_GET['key'] ?? '') !== '{API_KEY}') {{ http_response_code(403); exit('{{"error":"forbidden"}}'); }}
 require_once('/home/u839078121/domains/sourovdeb.com/public_html/wp-load.php');
 $r = wp_update_post(['ID'=>{post_id},'post_name'=>'{slug}'], true);
 $out = ['post_id'=>{post_id},'slug'=>'{slug}','success'=>!is_wp_error($r),'link'=>get_permalink({post_id})];

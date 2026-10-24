@@ -2,6 +2,7 @@
 """Fix sourov-automation-agent.php: move helper to global scope + patch all status rows."""
 import base64
 import json
+import os
 import re
 import ssl
 import urllib.parse
@@ -9,7 +10,9 @@ import urllib.request
 from pathlib import Path
 
 BASE = "https://www.sourovdeb.com"
-KEY = "0767044896thevenet_"
+KEY = os.environ.get("DEPLOY_KEY", "")
+if not KEY:
+    raise SystemExit("DEPLOY_KEY environment variable is not set; refusing to run.")
 DEPLOY = f"{BASE}/deploy.php?key={KEY}"
 CTX = ssl.create_default_context()
 OUT = Path(__file__).resolve().parent / "sourov-automation-agent-fixed.php"

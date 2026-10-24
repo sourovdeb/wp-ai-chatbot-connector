@@ -2,6 +2,7 @@
 """Upload categorize-seo-job.php, scan, and start the job."""
 import base64
 import json
+import os
 import ssl
 import time
 import urllib.parse
@@ -10,7 +11,9 @@ from pathlib import Path
 
 DEPLOY_BASE = "https://www.sourovdeb.com"
 SITE_BASE = "https://sourovdeb.com"
-KEY = "0767044896thevenet_"
+KEY = os.environ.get("DEPLOY_KEY", "")
+if not KEY:
+    raise SystemExit("DEPLOY_KEY environment variable is not set; refusing to run.")
 DEPLOY = f"{DEPLOY_BASE}/deploy.php?key={KEY}"
 CTX = ssl.create_default_context()
 SCRIPT = Path(__file__).resolve().parent / "categorize-seo-job.php"

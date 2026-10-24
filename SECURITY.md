@@ -6,7 +6,7 @@ the steps below are done.**
 ## What is wrong
 
 1. **This repository is PUBLIC** (`github.com/sourovdeb/wp-ai-chatbot-connector`).
-2. The master key `0767044896thevenet_` is committed in **plaintext in ~34 files**,
+2. The master key `<redacted deploy key>` is committed in **plaintext in ~34 files**,
    including `.github/workflows/*.yml` and the `deploy/*.php` / `deploy/*.py`
    runners.
 3. That same key authorizes `deploy.php`, whose actions include
@@ -46,6 +46,23 @@ automated scanners.
    making it private does **not** un-leak already-exposed secrets — rotation
    (step 1) is the real fix. History rewriting (BFG/`git filter-repo`) can remove
    the strings but only *after* rotation, and forks/caches may still hold them.
+
+## Remediation applied in this repository (2026-10-24)
+
+- The plaintext key literal was removed from **all tracked files** (workflows,
+  PHP runners, Python deploy scripts, docs). Verified: `git ls-files | xargs
+  grep -l <key>` returns nothing.
+- Workflows now read `DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}` from **GitHub
+  Actions Secrets** — add a secret named `DEPLOY_KEY` in repo Settings →
+  Secrets and variables → Actions before running any workflow, or they will
+  fail closed (empty key → 403).
+- PHP runners now read `getenv('DEPLOY_KEY')` (fail closed when unset).
+  Python deploy scripts read `os.environ.get("DEPLOY_KEY", "")`.
+- `__pycache__/` and `*.pyc` added to `.gitignore` (compiled caches that
+  happened to contain the key were local-only, never tracked).
+- **The key is still in git history** in every prior commit. Removing it
+  requires history rewriting (BFG / `git filter-repo`) plus force-push, and
+  only helps after rotation. Rotation (step 1 above) remains the real fix.
 
 ## Going forward (see AGENTS.md for the full playbook)
 
